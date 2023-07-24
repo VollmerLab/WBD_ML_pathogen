@@ -3,6 +3,20 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from Python_Data_Wrangling import *
 
+"""
+The best estimator across ALL searched params:
+RandomForestClassifier(max_depth=20, min_samples_leaf=2, min_samples_split=5, n_estimators=1000)
+
+The best score across ALL searched params:
+0.9758734249713631
+
+The best parameters across ALL searched params:
+{'n_estimators': 1000, 'min_samples_split': 5, 'min_samples_leaf': 2, 'max_features': 'sqrt', 'max_depth': 20, 'bootstrap': True}
+The accuracy of the model is: 0.967741935483871
+"""
+
+
+
 dataset = fullSampledf
 
 features = dataset.drop(['health'], axis=1).columns
