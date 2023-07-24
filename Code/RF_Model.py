@@ -1,21 +1,25 @@
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
-from Pycaret_Analysis import *
+from Python_Data_Wrangling import *
 
-dataset = dataset.drop(["time", "tank", "anti_health","anti","geno","resist","plate","dataset"], axis=1)
-numericalDataset = dataset.drop(["ID", "year", "season", "site", "health", "yrSeason"], axis=1)
-NFI = numericalDataset.columns
-NF = NFI.tolist()
+dataset = fullSampledf
 
-y=dataset.health
-x=dataset.drop(["ID", "year", "season", "site", "health", "yrSeason"], axis=1)
+features = dataset.drop(['health'], axis=1).columns
+target = ['health']
+y=dataset.loc[:, target]
+X=dataset.loc[:, features]
 
-training, test =train_test_split(dataset,test_size=0.40)
-train_x = [x for x in training]
-train_y = [y for y in training]
+X_train, X_test, y_train, y_test = train_test_split(X,              #the input features
+                                                    y,              #the label
+                                                    test_size=0.3,  #set aside 30% of the data as the test set
+                                                    random_state=7, #reproduce the results
+                                                   )
+print(X_train.shape)
+print(y_train.shape)
 
-from sklearn.ensemble import RandomForestRegressor
-rf = RandomForestRegressor(random_state = 42)
+from sklearn.ensemble import RandomForestClassifier
+rf = RandomForestClassifier(random_state = 42)
 
 from sklearn.model_selection import RandomizedSearchCV
 # Number of trees in random forest
@@ -41,9 +45,22 @@ random_grid = {'n_estimators': n_estimators,
 
 # Use the random grid to search for best hyperparameters
 # First create the base model to tune
-rf = RandomForestRegressor()
+rf = RandomForestClassifier()
 # Random search of parameters, using 3 fold cross validation,
 # search across 100 different combinations, and use all available cores
 rf_random = RandomizedSearchCV(estimator = rf, param_distributions = random_grid, n_iter = 100, cv = 3, verbose=2, random_state=42, n_jobs = -1)
+
 # Fit the random search model
-rf_random.fit(train_x, train_y)
+rf_random.fit(X_train, y_train.values.ravel())
+
+print("\n The best estimator across ALL searched params:\n", rf_random.best_estimator_)
+print("\n The best score across ALL searched params:\n", rf_random.best_score_)
+print("\n The best parameters across ALL searched params:\n", rf_random.best_params_)
+
+y_pred = rf_random.predict(X_test)
+
+# Prediction accuracy
+print('The accuracy of the model is: {}'.format(rf_random.score(X_test, y_test)))
+
+from sklearn.metrics import confusion_matrix
+print(confusion_matrix(y_test, y_pred))
