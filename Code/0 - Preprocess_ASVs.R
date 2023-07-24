@@ -11,7 +11,7 @@ library(ggupset)
 
 
 #### Functions ####
-data <- otu_tmm
+# data <- otu_tmm
 filter_missingness <- function(data, prop_missing){
   #data = a DGElist object, model_sample = samples to use for the calculation of % missingness
   #prop_missing = maximum percentage of samples which can be 0 and still keep ASV in dataset
@@ -24,7 +24,6 @@ filter_missingness <- function(data, prop_missing){
   data[keep, keep.lib.sizes = FALSE]
 }
 
-
 #### Data ####
 microbiome_data <- read_rds("../Data/field_tank_newPS_deciphersilva.rds")  %>%
   prune_samples(sample_sums(.) > 0, .) %>%
@@ -34,7 +33,8 @@ microbiome_data <- read_rds("../Data/field_tank_newPS_deciphersilva.rds")  %>%
                 family != "Mitochondria" &
                 class != "Chloroplast" & 
                 order != "Chloroplast") %>%
-  prune_samples(sample_sums(.) > 0, .)
+  prune_samples(sample_sums(.) > 1000, .) %>%
+  subset_samples(site != 'MG') #no disease samples
 
 metadata <- sample_data(microbiome_data) %>%
   as_tibble(rownames = 'sample_id') %>%
@@ -42,6 +42,7 @@ metadata <- sample_data(microbiome_data) %>%
 
 count(metadata, dataset, year, season)
 count(metadata, dataset, health)
+count(metadata, dataset, site)
 
 #### Split Field & Tank Metadata ####
 field_meta <- metadata %>% 
@@ -51,7 +52,7 @@ tank_meta <- metadata %>%
   filter(dataset == 'tank')
 
 #### Check overlap btw tank & field across years ####
-sample_point_asvs <- phyloseq_filter_prevalence(microbiome_data, prev.trh = 0.01) %>%
+sample_point_asvs <- phyloseq_filter_prevalence(microbiome_data, prev.trh = 0.1) %>%
   otu_table() %>%
   as.data.frame() %>%
   as_tibble(rownames = 'sample_id') %>%
@@ -85,6 +86,25 @@ sample_point_asvs %>%
 asvs_to_keep <- sample_point_asvs %>%
   filter(n_sample_points == 5) %>%
   pull(asv_id)
+length(asvs_to_keep)
+
+#### Check preliminary clustering ####
+# library(vegan)
+# prelim_nmds <- microbiome_data %>%
+#   subset_taxa(rownames(tax_table(microbiome_data)) %in% asvs_to_keep) %>%
+#   subset_samples(dataset == 'field') %>%
+#   otu_table() %>%
+#   as.data.frame() %>%
+#   metaMDS()
+# 
+# scores(prelim_nmds, 'sites') %>%
+#   as_tibble(rownames = 'sample_id') %>%
+#   left_join(metadata, by = 'sample_id') %>%
+#   
+#   ggplot(aes(x = NMDS1, y = NMDS2, colour = interaction(year, season), shape = health)) +
+#   geom_point() +
+#   facet_wrap(~site)
+#Remove MG because it has no disease samples
 
 #### Normalize ASV counts ####
 otu_tmm <- microbiome_data %>%
