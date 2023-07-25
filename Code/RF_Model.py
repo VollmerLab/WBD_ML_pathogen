@@ -15,27 +15,9 @@ The best parameters across ALL searched params:
 The accuracy of the model is: 0.967741935483871
 """
 
-
-
-dataset = fullSampledf
-
-features = dataset.drop(['health'], axis=1).columns
-target = ['health']
-y=dataset.loc[:, target]
-X=dataset.loc[:, features]
-
-X_train, X_test, y_train, y_test = train_test_split(X,              #the input features
-                                                    y,              #the label
-                                                    test_size=0.3,  #set aside 30% of the data as the test set
-                                                    random_state=7, #reproduce the results
-                                                   )
-print(X_train.shape)
-print(y_train.shape)
-
 from sklearn.ensemble import RandomForestClassifier
-rf = RandomForestClassifier(random_state = 42)
-
 from sklearn.model_selection import RandomizedSearchCV
+
 # Number of trees in random forest
 n_estimators = [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)]
 # Number of features to consider at every split
