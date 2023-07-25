@@ -25,7 +25,9 @@ filter_missingness <- function(data, prop_missing){
 }
 
 #### Data ####
-microbiome_data <- read_rds("../Data/field_tank_newPS_deciphersilva.rds")  %>%
+microbiome_raw <- read_rds("../Data/field_tank_newPS_deciphersilva.rds") 
+
+microbiome_data <- microbiome_raw %>%
   prune_samples(sample_sums(.) > 0, .) %>%
   subset_taxa(domain == "Bacteria" &
                 phylum != "Cyanobacteria" &
@@ -43,6 +45,15 @@ metadata <- sample_data(microbiome_data) %>%
 count(metadata, dataset, year, season)
 count(metadata, dataset, health)
 count(metadata, dataset, site)
+
+count(metadata, dataset)
+
+#### Sort out Experimental Design ####
+sample_data(microbiome_data) %>%
+  as_tibble(rownames = 'sample_id') %>%
+  filter(dataset == 'tank') %>%
+  select(time, tank, geno, anti, health, anti_health, resist, sample_id) %>%
+  count(anti, health, anti_health, time)
 
 #### Split Field & Tank Metadata ####
 field_meta <- metadata %>% 
@@ -166,18 +177,13 @@ filter(full_data, dataset == 'field') %>%
   janitor::remove_empty(which = 'cols') %>%
   write_csv('../intermediate_files/normalized_field_asv_counts.csv')
 
+filter(full_data, dataset == 'field') %>%
+  select(asv_id, sample_id, log2_cpm_norm, health) %>%
+  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
+
+
+  write_csv('../intermediate_files/normalized_field_asv_counts.csv')
+
 filter(full_data, dataset == 'tank') %>%
   write_csv('../intermediate_files/normalized_tank_asv_counts.csv')
 
-#### Look at some things ####
-full_data %>%
-  select(asv_id, sample_id, log2_cpm_norm:n_reads, lib.size) %>%
-  filter(sample_id == '2016_S_CK14_D_309')
-
-
-full_data %>%
-  select(sample_id, dataset, lib.size) %>%
-  distinct %>%
-  ggplot(aes(x = lib.size)) +
-  geom_histogram() +
-  facet_wrap(~dataset)
