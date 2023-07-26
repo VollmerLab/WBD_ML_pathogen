@@ -5,7 +5,7 @@ from sklearn.inspection import permutation_importance
 
 from Python_Data_Wrangling import *
 
-knn = KNeighborsClassifier(n_neighbors=1, weights='uniform')
+knn = KNeighborsClassifier(metric='manhattan', n_neighbors=4)
 
 knn.fit(X_train, y_train.values.ravel())
 
@@ -19,10 +19,10 @@ fig, ax = plt.subplots()
 knn_importances.plot.bar(ax=ax)
 ax.set_title("Feature importances using permutation on KNN model")
 ax.set_ylabel("Mean accuracy decrease")
-fig.tight_layout()
+plt.subplots_adjust(bottom=0.5)
 plt.show()
 
 
-explainer = shap.TreeExplainer(knn)
+explainer = shap.KernelExplainer(knn.predict_proba, X_train)
 shap_values = explainer.shap_values(X_test)
-shap.summary_plot(shap_values, X_test, plot_type="bar")
+shap.plots.waterfall(shap_values)

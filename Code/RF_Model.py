@@ -13,6 +13,9 @@ The best score across ALL searched params:
 The best parameters across ALL searched params:
 {'n_estimators': 1000, 'min_samples_split': 5, 'min_samples_leaf': 2, 'max_features': 'sqrt', 'max_depth': 20, 'bootstrap': True}
 The accuracy of the model is: 0.967741935483871
+
+[[41  1]
+ [ 2 80]]
 """
 
 from sklearn.ensemble import RandomForestClassifier

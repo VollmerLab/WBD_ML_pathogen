@@ -8,15 +8,19 @@ df = pd.read_csv(data_path)
 
 df = df.drop(['cpm_norm', 'cpm', 'n_reads', 'lib.size', 'norm.factors'], axis=1)
 df["health"] = np.where(df["health"] == "D", 0, 1)
+df['asv_id'] = df['asv_id'].astype(str)
+df['family'] = df['family'].astype(str)
+df['genus'] = df['genus'].astype(str)
+df['asv_id'] = df[['asv_id', 'family', 'genus']].agg('-'.join, axis=1)
+
 
 # sample as X axis, health and ASVs as Y
-
 sampledf = df.drop(['year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family', 'genus'], axis=1)
 healthdf = sampledf.drop(['asv_id', 'log2_cpm_norm'], axis=1)
 healthdf = healthdf.groupby('sample_id').max()
+
 sampledf = sampledf.pivot(index= 'sample_id', columns= 'asv_id', values='log2_cpm_norm')
 fullSampledf = pd.concat([sampledf, healthdf], axis=1)
-
 
 dataset = fullSampledf
 

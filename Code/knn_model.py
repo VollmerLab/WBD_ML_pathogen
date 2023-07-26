@@ -2,15 +2,16 @@ from Python_Data_Wrangling import *
 
 '''
 The best estimator across ALL searched params:
- KNeighborsClassifier(n_neighbors=1)
+ KNeighborsClassifier(metric='manhattan', n_neighbors=4)
 
  The best score across ALL searched params:
- 0.9517241379310345
+ 0.9550492610837438
 
  The best parameters across ALL searched params:
- {'weights': 'uniform', 'n_neighbors': 1}
-The accuracy of the model is: 0.9838709677419355
-[[41  1]
+ {'weights': 'uniform', 'n_neighbors': 4, 'metric': 'manhattan'}
+ 
+The accuracy of the model is: 0.9516129032258065
+[[37  5]
  [ 1 81]]
  '''
 
@@ -18,7 +19,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import RandomizedSearchCV
 
 # Create the random grid
-random_grid = dict(n_neighbors=range(1, 31), weights=['uniform', 'distance'])
+random_grid = dict(n_neighbors=range(1, 31), weights=['uniform', 'distance'], metric = ['euclidean', 'manhattan', 'minkowski'])
 
 # Use the random grid to search for best hyperparameters
 # First create the base model to tune
