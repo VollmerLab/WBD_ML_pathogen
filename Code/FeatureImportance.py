@@ -9,7 +9,7 @@ from Python_Data_Wrangling import *
 rf = RandomForestClassifier(max_depth=20, min_samples_leaf=2, min_samples_split=5, n_estimators=1000)
 
 
-rf.fit(X_train, y_train.values.ravel())
+rf.fit(X_train, y_train)
 
 result = permutation_importance(
     rf, X_test, y_test, n_repeats=10, random_state=42, n_jobs=2
@@ -38,6 +38,5 @@ plt.legend(loc=4)
 plt.show()
 
 explainer = shap.TreeExplainer(rf)
-shap_values = explainer(X_test)
-print(shap_values)
-shap.plots.waterfall(shap_values[0][0])
+shap_values = explainer(X_train)
+shap.plots.beeswarm(shap_values)

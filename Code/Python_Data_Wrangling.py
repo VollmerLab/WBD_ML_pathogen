@@ -7,7 +7,7 @@ data_path = '/Users/milesvollmer/Panama_Tank_Field/intermediate_files/normalized
 df = pd.read_csv(data_path)
 
 df = df.drop(['cpm_norm', 'cpm', 'n_reads', 'lib.size', 'norm.factors'], axis=1)
-df["health"] = np.where(df["health"] == "D", 0, 1)
+df["health"] = np.where(df["health"] == "D", 1, 0)
 df['asv_id'] = df['asv_id'].astype(str)
 df['family'] = df['family'].astype(str)
 df['genus'] = df['genus'].astype(str)
@@ -34,6 +34,9 @@ X_train, X_test, y_train, y_test = train_test_split(X,              #the input f
                                                     test_size=0.3,  #set aside 30% of the data as the test set
                                                     random_state=7, #reproduce the results
                                                    )
+
+
+
 
 
 
