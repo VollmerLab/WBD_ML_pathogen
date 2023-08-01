@@ -11,8 +11,8 @@ df["health"] = np.where(df["health"] == "D", 1, 0)
 df['asv_id'] = df['asv_id'].astype(str)
 df['family'] = df['family'].astype(str)
 df['genus'] = df['genus'].astype(str)
+ndf = df
 df['asv_id'] = df[['asv_id', 'family', 'genus']].agg('-'.join, axis=1)
-
 
 # sample as X axis, health and ASVs as Y
 sampledf = df.drop(['year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family', 'genus'], axis=1)
@@ -34,6 +34,16 @@ X_train, X_test, y_train, y_test = train_test_split(X,              #the input f
                                                     test_size=0.3,  #set aside 30% of the data as the test set
                                                     random_state=7, #reproduce the results
                                                    )
+ndf = ndf.drop(['year'], axis=1)
+healthyndf = ndf.where(ndf['health'] == 0)
+healthyndf = healthyndf.groupby('family').sum()
+healthyndf = healthyndf.rename(columns={'log2_cpm_norm' : 'healthy_log2_cpm_norm'})
+unhealthyndf = ndf.where(ndf['health'] == 1)
+unhealthyndf = unhealthyndf.groupby('family').sum()
+unhealthyndf = unhealthyndf.rename(columns={'log2_cpm_norm' : 'diseased_log2_cpm_norm'})
+ndf = pd.concat([healthyndf, unhealthyndf], axis=1)
+ndf = ndf.drop(['health'], axis=1)
+print(ndf.head())
 
 
 

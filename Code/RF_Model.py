@@ -63,3 +63,15 @@ print('The accuracy of the model is: {}'.format(rf_random.score(X_test, y_test))
 
 from sklearn.metrics import confusion_matrix
 print(confusion_matrix(y_test, y_pred))
+
+pcr_rf = RandomForestClassifier(**{'bootstrap': True, 'ccp_alpha': 0.0, 'class_weight': None, 'criterion': 'gini', 'max_depth': None, 'max_features': 'sqrt', 'max_leaf_nodes': None, 'max_samples': None, 'min_impurity_decrease': 0.0, 'min_samples_leaf': 1, 'min_samples_split': 2, 'min_weight_fraction_leaf': 0.0, 'n_estimators': 100, 'n_jobs': -1, 'oob_score': False, 'random_state': 3802, 'verbose': 0, 'warm_start': False})
+
+pcr_rf.fit(X_train, y_train)
+
+y_pred = pcr_rf.predict(X_test)
+
+# Prediction accuracy
+print('The accuracy of the model is: {}'.format(pcr_rf.score(X_test, y_test)))
+
+from sklearn.metrics import confusion_matrix
+print(confusion_matrix(y_test, y_pred))

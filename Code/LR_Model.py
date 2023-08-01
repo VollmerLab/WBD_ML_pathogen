@@ -64,6 +64,7 @@ plt.xlabel('Permutation Feature Importance')
 plt.ylabel('Feature Names')
 plt.title('Top 10 Permutation Feature Importance')
 plt.gca().invert_yaxis()
+plt.subplots_adjust(left=.5)
 plt.show()
 
 gini_importance = abs(lr_model.coef_[0])
@@ -81,16 +82,16 @@ plt.xlabel('Gini Feature Importance')
 plt.ylabel('Feature Names')
 plt.title('Top 10 Gini Feature Importance')
 plt.gca().invert_yaxis()
+plt.subplots_adjust(left=.5)
 plt.show()
 
 
 import shap
 
-explainer = shap.LinearExplainer(lr_model, X)
-shap_values = explainer.shap_values(X)
+explainer = shap.Explainer(lr_model, X_train)
+shap_values = explainer(X_test)
 
-# Plot force plots for 10 samples
-sample_indices = range(10)
-for i in sample_indices:
-    force_plot = shap.force_plot(explainer.expected_value, shap_values[i, :], X.iloc[i, :])
-    shap.save_html("LRforce_plot" + str(i) + ".html", force_plot)
+shap.plots.beeswarm(shap_values, show=False)
+fig, ax = plt.gcf(), plt.gca()
+plt.subplots_adjust(left=.5)
+plt.show()
