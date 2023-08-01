@@ -49,13 +49,13 @@ result = permutation_importance(lr_model, X_test, y_test, n_repeats=10, random_s
 perm_importance = result.importances_mean
 
 
-
+nfeatures = 20
 # Sort permutation feature importance values in descending order
 sorted_indices = perm_importance.argsort()[::-1]
-top_10_perm_importance = perm_importance[sorted_indices][:10]
+top_10_perm_importance = perm_importance[sorted_indices][:nfeatures]
 
 # Get the corresponding feature names for the top 10 importance values
-top_10_feature_names = X_test.columns[sorted_indices][:10]
+top_10_feature_names = X_test.columns[sorted_indices][:nfeatures]
 
 # Plot the top 10 permutation feature importance
 plt.figure()
@@ -70,10 +70,10 @@ plt.show()
 gini_importance = abs(lr_model.coef_[0])
 # Sort Gini feature importance values in descending order
 gini_sorted_indices = gini_importance.argsort()[::-1]
-top_10_gini_importance = gini_importance[gini_sorted_indices][:10]
+top_10_gini_importance = gini_importance[gini_sorted_indices][:nfeatures]
 
 # Get the corresponding feature names for the top 10 importance values
-top_10_feature_names = X_train.columns[gini_sorted_indices][:10]
+top_10_feature_names = X_train.columns[gini_sorted_indices][:nfeatures]
 
 # Plot the top 10 Gini feature importance
 plt.figure()

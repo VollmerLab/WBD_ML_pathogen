@@ -7,9 +7,12 @@ data_path = '/Users/milesvollmer/Panama_Tank_Field/intermediate_files/normalized
 df = pd.read_csv(data_path)
 
 # Make sure doing this correctly
+'''
 genusdf = df.drop(['health', 'sample_id', 'cpm_norm', 'cpm', 'n_reads', 'lib.size', 'norm.factors', 'year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family', 'log2_cpm_norm'], axis=1)
 genusdf = genusdf.groupby('asv_id').first()
-print(genusdf['genus'].value_counts())
+print(genusdf)
+'''
+
 df = df.drop(['cpm_norm', 'cpm', 'n_reads', 'lib.size', 'norm.factors'], axis=1)
 df["health"] = np.where(df["health"] == "D", 1, 0)
 df['asv_id'] = df['asv_id'].astype(str)
@@ -32,13 +35,12 @@ fullSampledf = pd.concat([sampledf, healthdf], axis=1)
 samplendf = ndf.drop(['year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'genus'], axis=1)
 samplendf = samplendf.pivot_table(index= 'sample_id', columns= 'family', values='log2_cpm_norm', aggfunc='sum')
 fullSampledf = pd.concat([fullSampledf, samplendf], axis=1)
-'''
-
 samplen1df = ndf.drop(['year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family'], axis=1)
 samplen1df = samplen1df.pivot_table(index= 'sample_id', columns= 'genus', values='log2_cpm_norm', aggfunc='median')
 fullSampledf = pd.concat([fullSampledf, samplen1df], axis=1)
 
 fullSampledf = fullSampledf.drop('nan', axis =1)
+'''
 
 dataset = fullSampledf
 
