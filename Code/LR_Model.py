@@ -3,6 +3,7 @@ from sklearn.metrics import accuracy_score, classification_report
 import matplotlib.pyplot as plt
 
 from Code.Python_Data_Wrangling import *
+from Code.TankDataWrangling import *
 
 best_lr_params = {
     'C': 1.0,
@@ -62,7 +63,7 @@ plt.figure()
 plt.barh(top_10_feature_names, top_10_perm_importance, color='skyblue')
 plt.xlabel('Permutation Feature Importance')
 plt.ylabel('Feature Names')
-plt.title('Top 10 Permutation Feature Importance')
+plt.title('Top ' + str(nfeatures) + ' Permutation Feature Importance')
 plt.gca().invert_yaxis()
 plt.subplots_adjust(left=.5)
 plt.show()
@@ -80,7 +81,7 @@ plt.figure()
 plt.barh(top_10_feature_names, top_10_gini_importance, color='lightcoral')
 plt.xlabel('Gini Feature Importance')
 plt.ylabel('Feature Names')
-plt.title('Top 10 Gini Feature Importance')
+plt.title('Top ' + str(nfeatures) + ' Gini Feature Importance')
 plt.gca().invert_yaxis()
 plt.subplots_adjust(left=.5)
 plt.show()
@@ -91,7 +92,7 @@ import shap
 explainer = shap.Explainer(lr_model, X_train)
 shap_values = explainer(X_test)
 
-shap.plots.beeswarm(shap_values, show=False)
+shap.plots.beeswarm(shap_values, show=False, max_display=21)
 fig, ax = plt.gcf(), plt.gca()
 plt.subplots_adjust(left=.5)
 plt.show()

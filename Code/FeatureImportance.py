@@ -39,4 +39,4 @@ plt.show()
 
 explainer = shap.TreeExplainer(rf)
 shap_values = explainer(X_train)
-shap.plots.beeswarm(shap_values)
+shap.summary_plot(shap_values, X_train)

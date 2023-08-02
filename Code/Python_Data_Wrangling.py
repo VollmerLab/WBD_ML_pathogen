@@ -6,7 +6,7 @@ data_path = '/Users/milesvollmer/Panama_Tank_Field/intermediate_files/normalized
 
 df = pd.read_csv(data_path)
 
-# Make sure doing this correctly
+
 '''
 genusdf = df.drop(['health', 'sample_id', 'cpm_norm', 'cpm', 'n_reads', 'lib.size', 'norm.factors', 'year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family', 'log2_cpm_norm'], axis=1)
 genusdf = genusdf.groupby('asv_id').first()

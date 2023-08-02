@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from Python_Data_Wrangling import *
 
+
 """
 The best estimator across ALL searched params:
 RandomForestClassifier(max_depth=20, min_samples_leaf=2, min_samples_split=5, n_estimators=1000)
@@ -56,7 +57,7 @@ print("\n The best estimator across ALL searched params:\n", rf_random.best_esti
 print("\n The best score across ALL searched params:\n", rf_random.best_score_)
 print("\n The best parameters across ALL searched params:\n", rf_random.best_params_)
 
-y_pred = rf_random.predict(X_test)
+y_pred = rf_random.predict()
 
 # Prediction accuracy
 print('The accuracy of the model is: {}'.format(rf_random.score(X_test, y_test)))
