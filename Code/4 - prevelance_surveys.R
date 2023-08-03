@@ -71,6 +71,18 @@ full_model <- prevelance_data %>%
       family = 'binomial',
       data = .)
 
+null_model <- prevelance_data %>%
+  group_by(site, timepoint, season, year) %>%
+  summarise(n_acerv = sum(acerv),
+            n_wbd = sum(wbd),
+            total_meters = n(),
+            .groups = 'drop') %>%
+  glm(cbind(n_wbd, n_acerv - n_wbd) ~ 1, 
+      family = 'binomial',
+      data = .)
+
+1-logLik(full_model)/logLik(null_model)
+
 count(prevelance_data, timepoint, season)
 count(prevelance_data, timepoint, year)
 count(prevelance_data, timepoint, date, site)
@@ -81,13 +93,32 @@ model_grid <- ref_grid(full_model)
 
 add_grouping(model_grid, 'season', 'timepoint', 
              factor(c('S', 'W', 'S', 'W', 'S'))) %>%
-  emmeans(~season | site) %>%
+  emmeans(~season) %>%
   contrast('pairwise')
+
+add_grouping(model_grid, 'season', 'timepoint', 
+             factor(c('S', 'W', 'S', 'W', 'S'))) %>%
+  emmeans(~season | site, type = 'response') %>%
+  contrast('pairwise')
+
 
 add_grouping(model_grid, 'year', 'timepoint', 
              factor(c('2015', '2016', '2016', '2017', '2017'))) %>%
-  emmeans(~year | site) %>%
+  emmeans(~year, type = 'response') %>%
   contrast('poly')
+
+add_grouping(model_grid, 'year', 'timepoint', 
+             factor(c('2015', '2016', '2016', '2017', '2017'))) %>%
+  emmeans(~year, type = 'response') %>%
+  broom::tidy() %>%
+  ggplot(aes(x = year, y = prob)) +
+  geom_point()
+
+add_grouping(model_grid, 'year', 'timepoint', 
+             factor(c('2015', '2016', '2016', '2017', '2017'))) %>%
+  emmeans(~year | site, type = 'response') %>%
+  contrast('poly')
+
 
 
 emmeans(model_grid, ~timepoint * site, type = 'response') %>%
