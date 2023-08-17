@@ -39,4 +39,4 @@ plt.show()
 
 explainer = shap.TreeExplainer(rf)
 shap_values = explainer(X_train)
-shap.summary_plot(shap_values, X_train)
+shap.summary_plot(shap_values, X_train.ravel())
