@@ -112,3 +112,18 @@ shap.plots.beeswarm(shap_values, show=False, max_display=21)
 fig, ax = plt.gcf(), plt.gca()
 plt.subplots_adjust(left=.5)
 plt.show()
+
+
+# Generate SHAP force plots for a specific prediction (you can change the index)
+
+indexes = {0, 10}
+for i in indexes:
+    print(y_test.iloc[i])
+    plot = shap.plots.force(shap_values[i], feature_names=X_test.columns, show=False)
+    shap.save_html('healthySample' + str(i) + '.html', plot)
+
+indexes = {2, 122}
+for i in indexes:
+    print(y_test.iloc[i])
+    plot = shap.plots.force(shap_values[i], feature_names=X_test.columns, show=False)
+    shap.save_html('diseasedSample' + str(i) + '.html', plot)

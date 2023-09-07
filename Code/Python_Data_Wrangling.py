@@ -48,7 +48,7 @@ fullSampledf = fullSampledf.drop('nan', axis =1)
 '''
 
 dataset = fullSampledf
-
+print(dataset["health"].value_counts())
 
 print(dataset.info)
 print(dataset.describe())
@@ -57,6 +57,7 @@ print(dataset.describe())
 
 features = dataset.drop(['health'], axis=1).columns  # Separate the health from the other features.
 target = ['health']  # Health is the target which the AI is predicting.
+
 y = dataset.loc[:, target]  # Dataset with the sample IDs as the index and the Health as the Feature
 X = dataset.loc[:, features]  # Dataset with the sample IDs as the index and the Bacterial Prevalence as the Features
 
@@ -65,6 +66,8 @@ X_train, X_test, y_train, y_test = train_test_split(X,               # the input
                                                     y,               # the target(health).
                                                     test_size=0.3,   # set aside 30% of the data as the test set.
                                                     random_state=7)  # reproduce the results.
+
+
 
 
 
