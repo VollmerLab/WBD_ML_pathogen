@@ -1,12 +1,15 @@
 Feature Importance Analysis:
-To determine which bacteria have the greatest impact on wether a Coral is healthy or diseased we preformed a feature importance study.
+To determine which bacteria have the greatest impact on whether a Coral is healthy or diseased we performed a feature importance study.
 
-I began by selecting the best machine learning algorithm using pycaret.
+The Dataset has bacteria prevalence data from field corals sampled in 2016 and 2017.
+
+
+I began by selecting the best machine learning algorithm using Pycaret.
 ![plot](/NewData/PycaretBM.png)
-After testing each ML Algorithm over 10 folds Logistic Regression Preformed the best in all categories besides recall.
-Next I used pycarets hyperparameter tuning to find the best preforming parameters for our model.
+After testing each ML Algorithm over 10 folds Logistic Regression Performed the best in all categories besides recall.
+Next, I used Pycaret's hyperparameter tuning to find the best-performing parameters for our model.
 ![plot](/NewData/LR_Tune.png)
-Now that we have our best model and best paramaters for it I created an LR model in SciKit which preformed as shown:
+Now that we have our best model and best parameters for it I created an LR model in SciKit which performed as shown:
 Accuracy: 0.9919354838709677
 Classification Report:
               precision    recall  f1-score   support
@@ -19,9 +22,9 @@ Classification Report:
 weighted avg       0.99      0.99      0.99       124
 ![plot](/NewData/LR_AUC.png)
 ![plot](/NewData/LRConMat.png)
-As seen by the accuracy, auc, and confusion matrix our model predicts healthy vs diseased corals very well.
+As seen by the accuracy, auc, and confusion matrix our model predicts healthy vs. diseased corals very well.
 Now that we know the model works well we can begin the feature importance analysis.
-I decided to use 3 different metrics of feature importance and to then compare the results to find the most prevalent features accross all 3 metrics.
+I decided to use 3 different metrics of feature importance and then compare the results to find the most prevalent features across all 3 metrics.
 I started with permutation importance, plotting the 20 most important features.
 ![plot](/NewData/LR_T20P_IMP.png)
 I then looked at the Gini Importance.
