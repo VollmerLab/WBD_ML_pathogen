@@ -3,6 +3,13 @@ To determine which bacteria have the greatest impact on whether a Coral is healt
 
 The Dataset has bacteria prevalence data from field corals sampled in 2016 and 2017.
 
+![plot](/NewData/BacteriaDFSummary.png)
+This is a summary of the data with each bacteria as an index and the quantity(log2 of the counts per million) of bacteria in the sample, the health, the year, the family, and the genus as the features.
+
+![plot](/NewData/SampleDFSummary.png)
+This is a summary of the data with the samples as an index and bacteria and health as the features. This is the dataset we will give to the AI.
+
+To prepare this data for the AI to use we
 
 I began by selecting the best machine learning algorithm using Pycaret.
 ![plot](/NewData/PycaretBM.png)
