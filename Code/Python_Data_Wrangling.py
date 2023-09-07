@@ -22,6 +22,11 @@ ndf = df
 df['asv_id'] = df[['asv_id', 'family', 'genus']].agg('-'.join, axis=1)
 
 
+print(df.info)
+print(df.describe())
+
+
+
 # sample as X axis, health and ASVs as Y
 sampledf = df.drop(['year', 'season', 'site', 'dataset', 'domain', 'phylum', 'class', 'order', 'family', 'genus'], axis=1)
 healthdf = sampledf.drop(['asv_id', 'log2_cpm_norm'], axis=1)
@@ -43,6 +48,12 @@ fullSampledf = fullSampledf.drop('nan', axis =1)
 '''
 
 dataset = fullSampledf
+
+
+print(dataset.info)
+print(dataset.describe())
+
+
 
 features = dataset.drop(['health'], axis=1).columns
 target = ['health']

@@ -53,11 +53,13 @@ plt.gca().invert_yaxis()
 plt.subplots_adjust(left=.5)
 plt.show()
 """
-
+print(X_test.sample(5))
 # Create a TreeExplainer
 explainer = shap.TreeExplainer(rf)
 
-choosen_instance = X_test.loc[[1]]
+choosen_instance = X_test.sample(5)
 shap_values = explainer.shap_values(choosen_instance)
-shap.initjs()
-shap.force_plot(explainer.expected_value[1], shap_values[1], choosen_instance)
+shap.force_plot(explainer.expected_value[1], shap_values[1], choosen_instance, show=False)
+fig, ax = plt.gcf(), plt.gca()
+plt.subplots_adjust(left=.5)
+plt.show()

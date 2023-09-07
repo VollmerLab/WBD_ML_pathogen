@@ -1,5 +1,5 @@
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 
 from Code.Python_Data_Wrangling import *
@@ -40,8 +40,24 @@ print("Accuracy:", accuracy)
 print("Classification Report:")
 print(classification_report(y_test, y_pred))
 
+from sklearn import metrics
+#define metrics
+y_pred_proba = lr_model.predict_proba(X_test)[::,1]
+fpr, tpr, _ = metrics.roc_curve(y_test,  y_pred_proba)
+auc = metrics.roc_auc_score(y_test, y_pred_proba)
+
+#create ROC curve
+plt.plot(fpr,tpr,label="AUC="+str(auc))
+plt.ylabel('True Positive Rate')
+plt.xlabel('False Positive Rate')
+plt.legend(loc=4)
+plt.show()
+
 from sklearn.metrics import confusion_matrix
-print(confusion_matrix(y_test, y_pred))
+disp = ConfusionMatrixDisplay(confusion_matrix=confusion_matrix(y_test, y_pred), display_labels=lr_model.classes_)
+disp.plot(cmap=plt.cm.terrain)
+plt.show()
+
 
 from sklearn.inspection import permutation_importance
 
