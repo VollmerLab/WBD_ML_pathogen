@@ -14,7 +14,7 @@ To prepare this data for the AI to use we perform a training test split on the d
 ![plot](/NewData/TrainTestSplit.png)
 
 
-I began by selecting the best machine learning algorithm using Pycaret.
+I then fed this data into Pycaret to find the best machine-learning algorithm to use on this data.
 ![plot](/NewData/PycaretBM.png)
 After testing each ML Algorithm over 10 folds Logistic Regression Performed the best in all categories besides recall.
 Next, I used Pycaret's hyperparameter tuning to find the best-performing parameters for our model.
