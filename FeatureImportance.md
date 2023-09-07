@@ -1,4 +1,9 @@
-# Feature Importance Analysis:
+# Feature Importance Analysis of Disease Outcomes and Bacterial Associations on Staghorn Coral with White Band Disease
+
+Aim: 
+1. Use ML algorythims to classify healthy and diseased corals in the field using only their bacterial types (i.e. ASVs) and abundances, and
+2. Identify which bacterial ASVs best explain the disease outcomes using feature importance values and SHAP plots.
+
 ## The Data
 To determine which bacteria have the greatest impact on whether a Coral is healthy or diseased we performed a feature importance study.
 The Dataset has bacteria prevalence data from field corals sampled in 2016 and 2017.
@@ -21,11 +26,21 @@ X_train, X_test, y_train, y_test = train_test_split(X,               # the input
                                                     random_state=7)  # reproduce the results.
 '''
 
-## PyCaret Analysis
+## PyCaret ML Model Testing
+
+PyCaret fits and compares the top ML models with our data to help select which models or sets of models perform best as a classifier.
 
 I then fed this data into Pycaret to find the best machine-learning algorithm to use on this data.
 ![plot](/NewData/PycaretBM.png)
+
 After testing each ML Algorithm over 10 folds Logistic Regression Performed the best in all categories besides recall.
+
+Explain. figure Models are ranked based on 
+Explain values are.
+Based these results, LR, RF etc. all performed we and can be fined turned downstream. 
+
+## Logistic Regression Model and Feature Importance.
+
 Next, I used Pycaret's hyperparameter tuning to find the best-performing parameters for our model.
 ![plot](/NewData/LR_Tune.png)
 
@@ -45,6 +60,8 @@ weighted avg       0.99      0.99      0.99       124
 ![plot](/NewData/LRConMat.png)
 As seen by the accuracy, auc, and confusion matrix our model predicts healthy vs. diseased corals very well.
 Now that we know the model works well we can begin the feature importance analysis.
+
+Explain matrix. 
 
 ## Feature Importance
 I decided to use 3 different metrics of feature importance and then compare the results to find the most prevalent features across all 3 metrics.
