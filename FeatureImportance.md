@@ -48,43 +48,62 @@ Each ML Algorithm tested with 10 fold cross validation
 
 ### Model Test Results
 
+Table of model accuracy parameters ranked by accuracy. 
+
+ML accuracies show how well the ML models predict the coral disease outcome (healthy or disease) based solely on their bacteria communities (which includes potential but currently unknown pathogens)
+
+Logistic regression has the highest accuracy at 99.3%!!! with the top 5 modesl including different tree based classifiers including Random Forest also performing well.
+
 ![plot](/NewData/PycaretBM.png)
 
-After testing each ML Algorithm over 10 folds Logistic Regression Performed the best in all categories besides recall.
-
-Explain. figure Models are ranked based on 
-Explain values are.
-Based these results, LR, RF etc. all performed we and can be fined turned downstream. 
+Accuracy is the prediction accuracy
+AUC stands for Area under the Curve and is a standard performance metric for ML modeling.
 
 ## Logistic Regression Model and Feature Importance.
 
-Next, I used Pycaret's hyperparameter tuning to find the best-performing parameters for our model.
+### LR Model
+Hyperparameter tuning the best fit LR models with additional CV validation produces similar model results with 98.6% accuracy.
+
 ![plot](/NewData/LR_Tune.png)
 
-## Model Setup
-Now that we have our best model and best parameters for it I created an LR model in SciKit which performed as shown:
-Accuracy: 0.9919354838709677
-Classification Report:
-              precision    recall  f1-score   support
+![plot](/NewData/LR_AUC.png)
 
-           0       1.00      0.99      0.99        82
-           1       0.98      1.00      0.99        42
+## LR Model Performance on Test Data
+
+Accuracy: 0.992 # Can't get much better
+
+Classification Report:
+                         precision    recall  f1-score   support
+           0 (Healthy)      1.00      0.99      0.99        82
+           1 (Disease)      0.98      1.00      0.99        42
 
     accuracy                           0.99       124
    macro avg       0.99      0.99      0.99       124
 weighted avg       0.99      0.99      0.99       124
-![plot](/NewData/LR_AUC.png)
+
+### Confusion Matrix
+
+Health state - Healthy = 0 and Disease = 1
+X-axis is Predicted vs Y-axis is Observed Health State
+
+The LR model correctly predicted health state in all but one case where a Healthy corals was predicted as disease, which biologically makes sense since some asymptomatic corals may have contrated disease but are not showing symptoms.
+
+In the big picture, we can use 16s bacterial sequencingn alone to accurately identify disease corals without any additional data. This will allow us to screen nursery raised corals for disease before being outplanted in wild.
+
 ![plot](/NewData/LRConMat.png)
-As seen by the accuracy, auc, and confusion matrix our model predicts healthy vs. diseased corals very well.
-Now that we know the model works well we can begin the feature importance analysis.
 
-Explain matrix. 
+## Using Feature Importance to Identify Key Bacteria (including Pathogens) Driving Disease Outcomes
 
-## Feature Importance
-I decided to use 3 different metrics of feature importance and then compare the results to find the most prevalent features across all 3 metrics.
-I started with permutation importance, plotting the 20 most important features.
+Traditional statistics typically IDs hundreds of associations and potential pathogens hamstringing coral pathogen research.
+
+We are using feature importance to identify the most important bacteria driving the models - starting with our best model. In the future, I plan to look at overlap between different ML models and look for consensus within the top 20 most important features.
+
+
+### Top 20 - Permutation Importance
+
 ![plot](/NewData/LR_T20P_IMP.png)
-I then looked at the Gini Importance.
+
+### Top 20 - Gini Importance.
 ![plot](/NewData/LR_T20G_IMP.png)
 And finally the Shap Values
 ![plot](/NewData/LR_T20S_IMP.png)
