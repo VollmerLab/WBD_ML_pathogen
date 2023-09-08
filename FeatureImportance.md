@@ -5,14 +5,28 @@ Aim:
 2. Identify which bacterial ASVs best explain the disease outcomes using feature importance values and SHAP plots.
 
 ## The Data
-To determine which bacteria have the greatest impact on whether a Coral is healthy or diseased we performed a feature importance study.
-The Dataset has bacteria prevalence data from field corals sampled in 2016 and 2017.
-This is a summary of the data with each bacteria as an index and the quantity(log2 of the counts per million) of bacteria in the sample, the health, the year, the family, and the genus as the features.
+
+16s rDNA amplicon sequencing of bacterial from 413 Staghorn corals (270 healthy; 143 diseased)
+Total number of bacterial ASVs (i.e. species) is 342 ASVs - these represent bacteria found in 5% of samples.
+Bacterial abundances are normalized as log2 counts per million to account for different sequence library sizes and make them more normaly distributed.
+
+### Data Structure
+ 
+Bacteria prevalence data from field corals sampled in 2016 and 2017.
+Each bacteria as an index and the quantity(log2 of the counts per million) of bacteria in the sample, the health, the year, the family, and the genus as the features.
+
 ![plot](/NewData/BacteriaDFSummary.png)
-This is a summary of the data with the samples as an index and bacteria and health as the features. This is the dataset we will give to the AI.
+
+### Data Summary
+
+Data with the samples as an index and bacteria and health as the features. This is the dataset passed to the AI/ML models.
+
 ![plot](/NewData/SampleDFSummary.png)
-We sampled 270 healthy corals 143 diseased for a total of 413 individual corals. For each coral sample, we have 342 distinct bacteria(ASVs) with the prevalence for  
-To prepare this data for the AI to use we perform a training test split on the data and set 30% of the data aside as the test set.
+
+## Test/Train Split
+
+70/30 training test split
+
 '''
 features = dataset.drop(['health'], axis=1).columns  # Separate the health from the other features.
 target = ['health']  # Health is the target which the AI is predicting.
@@ -30,7 +44,10 @@ X_train, X_test, y_train, y_test = train_test_split(X,               # the input
 
 PyCaret fits and compares the top ML models with our data to help select which models or sets of models perform best as a classifier.
 
-I then fed this data into Pycaret to find the best machine-learning algorithm to use on this data.
+Each ML Algorithm tested with 10 fold cross validation
+
+### Model Test Results
+
 ![plot](/NewData/PycaretBM.png)
 
 After testing each ML Algorithm over 10 folds Logistic Regression Performed the best in all categories besides recall.
