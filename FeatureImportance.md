@@ -81,6 +81,7 @@ Classification Report:
    macro avg       0.99      0.99      0.99       124
 weighted avg       0.99      0.99      0.99       124
 
+
 ### Confusion Matrix
 
 Health state - Healthy = 0 and Disease = 1
