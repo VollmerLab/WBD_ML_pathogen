@@ -89,7 +89,7 @@ X-axis is Predicted vs Y-axis is Observed Health State
 
 The LR model correctly predicted health state in all but one case where a Healthy corals was predicted as disease, which biologically makes sense since some asymptomatic corals may have contrated disease but are not showing symptoms.
 
-In the big picture, we can use 16s bacterial sequencingn alone to accurately identify disease corals without any additional data. This will allow us to screen nursery raised corals for disease before being outplanted in wild.
+Implication! = we can use 16s bacterial sequencingn alone to accurately identify disease corals without any additional data and without knowing the actual pathogen. This will allow us to screen nursery raised corals for disease before being outplanted in wild.
 
 ![plot](/NewData/LRConMat.png)
 
