@@ -99,12 +99,18 @@ Traditional statistics typically IDs hundreds of associations and potential path
 
 We are using feature importance to identify the most important bacteria driving the models - starting with our best model. In the future, I plan to look at overlap between different ML models and look for consensus within the top 20 most important features.
 
-
-### Top 20 - Permutation Importance
-
-![plot](/NewData/LR_T20P_IMP.png)
-
 ### Top 20 - Gini Importance.
+
+Gini importance is a standard importance plots and shows our top bacterial candidates.
+
+ASV25 is a Francisellaceae bacterial strain that we think is a top pathogen from other work. 
+
 ![plot](/NewData/LR_T20G_IMP.png)
-And finally the Shap Values
+
+### Shap values
+
+Shap plots are a more modern way of looking at the top features that we are incorporating in our work because they show the direction of importants (more or less on disease) and how they impact individual coral samples.
+
+There is overlap in our top20 bacterial candidates, but SHAP plots like this show the direction. For example, ASV25 is strongly associated with disease as are the other top 3 ASVs each of which is a target pathogen for cultivation in the lab.
+
 ![plot](/NewData/LR_T20S_IMP.png)
