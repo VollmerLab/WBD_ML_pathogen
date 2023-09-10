@@ -8,7 +8,7 @@ Aim:
 
 16s rDNA amplicon sequencing of bacterial from 413 Staghorn corals (270 healthy; 143 diseased)
 The total number of bacterial ASVs (i.e. species) is 342 ASVs - these represent bacteria found in 5% of samples.
-Bacterial abundances are normalized as log2 counts per million to account for different sequence library sizes and make them more normaly distributed.
+Bacterial abundances are normalized as log2 counts per million to account for different sequence library sizes and make them more normally distributed.
 
 ### Data Structure
  
@@ -28,7 +28,7 @@ Data with the samples as an index and bacteria and health as the features. This 
 70/30 training test split
 
 '''
-features = dataset.drop(['health'], axis=1).columns  # Separate the health from the other features.
+features = dataset.drop(['health'], axis=1).columns # Separate the health from the other features.
 target = ['health']  # Health is the target which the AI is predicting.
 y = dataset.loc[:, target]  # Dataset with the sample IDs as the index and the Health as the Feature
 X = dataset.loc[:, features]  # Dataset with the sample IDs as the index and the Bacterial Prevalence as the Features
@@ -97,7 +97,7 @@ Implication! = We can use 16s bacterial sequencing alone to accurately identify 
 
 Traditional statistics typically IDs hundreds of associations and potential pathogens hamstringing coral pathogen research.
 
-We are using feature importance to identify the most important bacteria driving the models - starting with our best model. In the future, I plan to look at overlap between different ML models and look for consensus within the top 20 most important features.
+We are using feature importance to identify the most important bacteria driving the models - starting with our best model. In the future, I plan to look at the overlap between different ML models and look for consensus within the top 20 most important features.
 
 ### Top 20 - Gini Importance.
 
@@ -111,6 +111,6 @@ ASV25 is a Francisellaceae bacterial strain that we think is a top pathogen from
 
 Shap plots are a more modern way of looking at the top features that we are incorporating in our work because they show the direction of importance (more or less on disease) and how they impact individual coral samples.
 
-There is overlap in our top 20 bacterial candidates, but SHAP plots like this show the direction. For example, ASV25 is strongly associated with disease as are the other top 3 ASVs each of which is a target pathogen for cultivation in the lab.
+There is an overlap in our top 20 bacterial candidates, but SHAP plots like this show the direction. For example, ASV25 is strongly associated with disease as are the other top 3 ASVs each of which is a target pathogen for cultivation in the lab.
 
 ![plot](/NewData/LR_T20S_IMP.png)
