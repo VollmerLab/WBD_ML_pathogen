@@ -64,7 +64,7 @@ preprocess_recipie <- recipe(health ~ ., data = coral_train) %>%
 
 #### Build Random Forest Model ####
 forest_model <- rand_forest() %>%
-  set_engine('ranger', importance = 'permutation', probability = TRUE) %>%
+  set_engine('ranger', importance = 'impurity', probability = TRUE) %>%
   set_mode('classification') %>%
   set_args(mtry = tune(),
            trees = tune(),
@@ -143,7 +143,7 @@ fit_rf %>%
   left_join(taxonomy, by = c('asv_id')) %>%
   mutate(var = str_c(family, genus, asv_id, sep = '_')) %>%
   arrange(-Importance) %>%
-  slice(1:24) %>%
+  slice(1:10) %>%
   mutate(var = fct_reorder(var, Importance)) %>%
   ggplot(aes(x = Importance, y = var)) +
   geom_segment(xend = 0, aes(yend = var)) +
@@ -152,4 +152,4 @@ fit_rf %>%
   labs(y = NULL) +
   theme(panel.background = element_rect(colour = 'black'),
         strip.background = element_blank())
-
+ggsave('../Results/rf_importance.png', height = 7, width = 7)

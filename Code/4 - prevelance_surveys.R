@@ -59,8 +59,62 @@ prevelance_data %>%
   geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
   facet_wrap(~site)
   
+#### Acerv Analysis ####
+acerv_model <- prevelance_data %>%
+  group_by(site, timepoint, season, year) %>%
+  summarise(n_acerv = sum(acerv),
+            n_wbd = sum(wbd),
+            total_meters = n(),
+            .groups = 'drop') %>%
+  glm(cbind(n_acerv, total_meters - n_acerv) ~ timepoint * site, 
+      family = 'binomial',
+      data = .)
 
-#### Analysis ####
+car::Anova(acerv_model)
+  
+emmeans(acerv_model, ~timepoint * site, type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  left_join(count(prevelance_data, timepoint, date, site, season, year),
+            by = c('timepoint', 'site')) %>%
+  
+  ggplot(aes(x = date, y = prob, colour = site)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  scale_x_date(date_labels = '%b\n%y') +
+  labs(x = NULL, 
+       y = 'Acerv Abundance (%)',
+       colour = NULL) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = 'black', size = 12))
+  
+
+emmeans(acerv_model, ~site) %>%
+  contrast('pairwise')
+
+emmeans(acerv_model, ~site, type = 'response')
+
+emmeans(acerv_model, ~timepoint) %>%
+  contrast('poly')
+
+emmeans(acerv_model, ~timepoint, type = 'response') %>% 
+  broom::tidy(conf.int = TRUE) %>%
+  left_join(count(prevelance_data, timepoint, date, site, season, year) %>%
+              group_by(timepoint, season, year) %>%
+              summarise(date = median(date),
+                        .groups = 'drop'),
+            by = c('timepoint')) %>%
+  
+  ggplot(aes(x = date, y = prob)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  scale_x_date(date_labels = '%b\n%y') +
+  labs(x = NULL, 
+       y = 'Acerv Abundance (%)',
+       colour = NULL) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = 'black', size = 12))
+
+#### WBD Analysis ####
 full_model <- prevelance_data %>%
   group_by(site, timepoint, season, year) %>%
   summarise(n_acerv = sum(acerv),
@@ -188,3 +242,8 @@ add_grouping(model_grid2, 'year', 'timepoint',
   emmeans(~year, type = 'response') %>%
   broom::tidy(conf.int = TRUE) %>%
   mutate(grouping = c('A', 'B', 'A'))
+
+
+#### Joint model acerv & WBD ####
+library(brms)
+
