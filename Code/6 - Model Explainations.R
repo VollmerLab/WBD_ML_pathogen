@@ -2,7 +2,6 @@
 ##TODO - summary shap plots https://christophm.github.io/interpretable-ml-book/shap.html#shap-feature-importance
 
 #TODO - run with many bootstraps
-#TODO - figure out problem with pls_svm
 
 library(tidyverse)
 library(magrittr)
@@ -15,14 +14,14 @@ library(ggbeeswarm)
 library(tidytext)
 library(multidplyr)
 
-rerun_shap <- TRUE
-NSIM <- 2
-MAX_ASV <- 20
+rerun_shap <- FALSE
+NSIM <- 10
+MAX_ASV <- 10
 
 #### Read in Models & Data ####
 coral_split <- read_rds('../intermediate_files/coral_split.rds.gz')
 top_disease_models <- read_rds('../intermediate_files/top_disease_models.rds.gz') %>%
-  mutate(model = fct_reorder(model, -bal_accuracy))
+  mutate(model = fct_reorder(model, mn_log_loss))
 taxonomy <- read_csv('../intermediate_files/taxonomy.csv.gz', show_col_types = FALSE) %>%
   mutate(across(everything(), str_replace_na))
 
@@ -113,24 +112,24 @@ model_important_asvs <- individual_shap_values %>%
   select(model, asv_id, shap_importance, asv_rank, higher_taxonomy)
 
 #To use SHAPviz
-library(shapviz)
-
-shap_mat <- top_shaps %>%
-  filter(model == 'pca_lda') %>%
-  select(sample_id, ends_with('shap')) %>%
-  rename_with(~str_remove(., '_shap')) %>%
-  column_to_rownames('sample_id') %>%
-  as.matrix()
-
-value_mat <- top_shaps %>%
-  filter(model == 'pca_lda') %>%
-  select(sample_id, ends_with('value')) %>%
-  rename_with(~str_remove(., '_value')) %>%
-  column_to_rownames('sample_id') %>%
-  as.matrix()
-
-shapviz(object = shap_mat, X = value_mat) %>%
-  sv_importance(kind = 'bar')
+# library(shapviz)
+# 
+# shap_mat <- top_shaps %>%
+#   filter(model == 'pca_lda') %>%
+#   select(sample_id, ends_with('shap')) %>%
+#   rename_with(~str_remove(., '_shap')) %>%
+#   column_to_rownames('sample_id') %>%
+#   as.matrix()
+# 
+# value_mat <- top_shaps %>%
+#   filter(model == 'pca_lda') %>%
+#   select(sample_id, ends_with('value')) %>%
+#   rename_with(~str_remove(., '_value')) %>%
+#   column_to_rownames('sample_id') %>%
+#   as.matrix()
+# 
+# shapviz(object = shap_mat, X = value_mat) %>%
+#   sv_importance(kind = 'bar')
 
 #### SHAP Importance Plots ####
 model_important_asvs %>% 
@@ -147,12 +146,20 @@ model_important_asvs %>%
 #### SHAP Importance - sankey ####
 model_important_asvs %>% #count(asv_rank)
   filter(asv_rank <= MAX_ASV) %>%
+  mutate(higher_taxonomy = fct_reorder(higher_taxonomy, asv_rank)) %>% 
   
   ggplot(aes(x = model, y = shap_importance, 
              color = higher_taxonomy, 
              group = asv_id)) +
+  
+  
+  
   geom_bump() +
   geom_point() +
+  
+  # geom_text(data = . %>% filter(model == levels(model)[1]),
+  #           aes(label = higher_taxonomy, x = model)) +
+  
   # coord_cartesian(ylim=c(MAX_ASV, 1)) +
   # scale_y_reverse(labels = 1:MAX_ASV, breaks = 1:MAX_ASV) +
   guides(colour = guide_legend(ncol = 3)) + 
@@ -162,6 +169,7 @@ model_important_asvs %>% #count(asv_rank)
   theme_classic() +
   theme(legend.position = 'bottom',
         legend.direction = 'horizontal')
+ggsave('../Results/top_model_shapImportance.png', height = 7, width = 10)
 
 #### SHAP Summary ####
 individual_shap_values %>% 
@@ -182,7 +190,7 @@ individual_shap_values %>%
   scale_y_reordered() +
   scale_color_distiller(type = 'div', palette = 'Spectral') +
   labs(y = NULL)
-  
+
 #### SHAP Dependence Plots ####
 shapviz(object = shap_mat, X = value_mat) %>%
   sv_dependence(v = 'ASV25')

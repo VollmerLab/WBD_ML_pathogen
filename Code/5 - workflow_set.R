@@ -1,12 +1,15 @@
 ##TODO - output diagnostic plots & conf mats etc.
 ##TODO - decide mcc/brier/logLike/bal_accuracy for both tuning and determining equivilent models
-##TODO - decide repeated vfold CV vs monte carlo CV vs Bootstrap CV
-##TODO - have base model without subsampling??
 
+if(Sys.info()['sysname'] != 'Windows'){
+  .libPaths("~/R/x86_64-pc-linux-gnu-library/4.2")
+}
 
 library(doFuture)
+library(future.batchtools)
 library(tidyverse)
 library(magrittr)
+library(patchwork)
 library(tidymodels)
 library(tidyposterior)
 library(discrim)
@@ -16,6 +19,17 @@ library(plsmod)
 library(rules)
 library(themis)
 library(finetune)
+
+rerun_process <- FALSE
+reduce_modelset <- TRUE
+
+registerDoFuture()
+if(Sys.info()['sysname'] != 'Windows'){
+  plan(list('batchtools_slurm', 'multisession'), template = "~/slurm_template.tmpl")
+} else {
+  plan(cluster, workers = parallel::makeCluster(parallel::detectCores(logical = FALSE)))
+}
+
 
 #### Data ####
 field_data <- read_csv('../intermediate_files/normalized_field_asv_counts.csv', 
@@ -39,30 +53,39 @@ metadata <- select(field_data, sample_id, health, year, season, site) %>%
   distinct
 
 #### Train/Test Split ####
-coral_split <- initial_split(field_data_wide, prop = 3/4,
-                             strata = health)
+if(file.exists('../intermediate_files/coral_split.rds.gz') & !rerun_process){
+  coral_split <- read_rds('../intermediate_files/coral_split.rds.gz')
+} else {
+  coral_split <- initial_split(field_data_wide, prop = 3/4,
+                               strata = health)
+  write_rds(coral_split, '../intermediate_files/coral_split.rds.gz')
+}
+
 coral_train <- training(coral_split) 
 coral_test <- testing(coral_split)
-write_rds(coral_split, '../intermediate_files/coral_split.rds.gz')
 
 count(coral_train, health)
 count(coral_test, health)
 
-coral_folds <- vfold_cv(coral_train,
-                        v = 10,
-                        repeats = 10,
-                        strata = health)
-
-
-# coral_folds <- bootstraps(coral_train,
-#                           times = 10,
-#                           strata = health)
-
-# coral_folds <- mc_cv(coral_train,
-#                      prop = 3/4,
-#                      times = 25,
-#                      strata = health)
-
+if(file.exists('../intermediate_files/coral_folds.rds.gz') & !rerun_process){
+  coral_folds <- read_rds('../intermediate_files/coral_folds.rds.gz')
+} else {
+  # coral_folds <- vfold_cv(coral_train,
+  #                         v = 10,
+  #                         repeats = 10,
+  #                         strata = health)
+  
+  # coral_folds <- bootstraps(coral_train,
+  #                           times = 10,
+  #                           strata = health)
+  
+  coral_folds <- mc_cv(coral_train,
+                       prop = 3/4,
+                       times = 25,
+                       strata = health)
+  
+  write_rds(coral_folds, '../intermediate_files/coral_folds.rds.gz')
+}
 
 
 #### Preprocessing ####
@@ -304,17 +327,18 @@ disease_wflow <- workflow_set(
                 mlp = mlp_model,
                 mars = mars_model),
   cross = TRUE) %>%
-  # sample_frac(1) %>%
-  # filter(wflow_id == 'base_rf') %>%
   
   #Remove combos that don't make sense
   anti_join(tibble(wflow_id = c("pca_lasso", "corr_lasso", 'pls_lasso',
                                 "pca_ridge", "corr_ridge", 'pls_ridge',
-                                "pca_elasticNet", "corr_elasticNet", 'pls_elasticNet')),
+                                "pca_elasticNet", "corr_elasticNet", 'pls_elasticNet',
+                                'base_mars', 'base_bagMARS', 'pls_pls')),
             by = "wflow_id") %>%
   sample_frac(1) %>% #randomize order
   
-  # filter(str_detect(wflow_id, 'bagMARS', negate = TRUE)) %>%
+  #remove models with excessive errors fitting sample models
+  # bagMARS = very slow
+  filter(str_detect(wflow_id, 'rule|bagMARS', negate = TRUE)) %>% 
   
   identity()
 
@@ -351,23 +375,22 @@ for(model_id in str_subset(disease_wflow$wflow_id, 'forest$|boostTree$|fda$|qda$
                id = model_id)
 }
 
-# disease_wflow <- disease_wflow %>%
-#   # filter(str_detect(wflow_id, 'base')) %>%
-#   filter(str_detect(wflow_id, 'lda'))
-
-
 #### Train Hyperparameters ####
-registerDoFuture()
-plan(cluster, workers = parallel::makeCluster(parallel::detectCores(logical = FALSE)))
+if(reduce_modelset){
+  disease_wflow <- disease_wflow %>% #pull(wflow_id) %>% sort
+    filter(!wflow_id %in% c('base_knn', 'base_bagMLP', 'base_svmLinear', 'base_svmPOLY', 'base_svmRBF',
+                           'base_nb', 'base_lda', 'base_qda', 'base_bagMLP'),
+           !str_detect(wflow_id, 'corr|pca'))
+}
 
-if(file.exists('../intermediate_files/model_tune_run.rds.gz')){
+if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
   disease_model_tune <- read_rds('../intermediate_files/model_tune_run.rds.gz')
 } else {
   disease_model_tune <- workflow_map(disease_wflow,
                                      "tune_bayes", 
                                      resamples = coral_folds, 
-                                     initial = 25,
-                                     iter = 100,
+                                     initial = 15,
+                                     iter = 10,
                                      metrics = metric_set(mn_log_loss, brier_class,
                                                           bal_accuracy, accuracy,
                                                           j_index, roc_auc,
@@ -376,15 +399,24 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz')){
                                      verbose = TRUE,
                                      control = control_bayes(verbose = FALSE,
                                                              allow_par = TRUE,
-                                                             no_improve = 25L,
-                                                             uncertain = 10L))
+                                                             no_improve = 5L,
+                                                             uncertain = 3L))
   write_rds(disease_model_tune, '../intermediate_files/model_tune_run.rds.gz')
 }
 
-autoplot(disease_model_tune, metric = "mn_log_loss")
-autoplot(disease_model_tune, select_best = TRUE, 
-         metric = "mn_log_loss", rank_metric = "mn_log_loss")
-autoplot(disease_model_tune, id = 'base_lda', metric = "mn_log_loss")
+remove_errors <- function(wfset){
+  to_remove <- map_lgl(wfset$result, ~'try-error' %in% class(.)) %>%
+    which
+  
+  slice(wfset, -1 * to_remove)
+}
+disease_model_tune <- remove_errors(disease_model_tune)
+
+# autoplot(disease_model_tune, metric = "bal_accuracy")
+model_tune_plot <- autoplot(disease_model_tune, select_best = TRUE, 
+                            metric = c('bal_accuracy', "mn_log_loss"), rank_metric = "mn_log_loss")
+ggsave('../Results/model_tuning_results.png', height = 7, width = 14)
+# autoplot(disease_model_tune, id = 'pls_qda', metric = "bal_accuracy")
 
 rank_results(disease_model_tune, rank_metric = "mn_log_loss", select_best = TRUE) %>%
   filter(.metric == 'mn_log_loss') 
@@ -417,22 +449,33 @@ model_class_tweak <- function(model, metric, direction = 'minimize'){
   model
 }
 
-model_equivilance_model <- get_best_fit_stats(disease_model_tune, 'bal_accuracy') %>%
+if(file.exists('../intermediate_files/model_equivilance.rds.gz') & !rerun_process){
+  model_equivilance_model <- read_rds('../intermediate_files/model_equivilance.rds.gz')
+} else {
+  model_equivilance_model <- get_best_fit_stats(disease_model_tune, 'bal_accuracy') %>%
+    
+    perf_mod(#formula = ,
+      #transform = logit_trans,
+      # family = 'binomial',
+      hetero_var = FALSE,
+      
+      chains = 4,
+      cores = 4,
+      iter = 2000,
+      warmup = 1000,
+      refresh = 100) %>%
+    model_class_tweak(metric = 'bal_accuracy', direction = 'maximize')
   
-  perf_mod(#formula = ,
-           #transform = logit_trans,
-           # family = 'binomial',
-           hetero_var = FALSE,
-           
-           chains = 4,
-           cores = 4,
-           iter = 2000,
-           warmup = 1000,
-           refresh = 100) %>%
-  model_class_tweak(metric = 'bal_accuracy', direction = 'maximize')
+  write_rds(model_equivilance_model, '../intermediate_files/model_equivilance.rds.gz')
+}
 
-autoplot(model_equivilance_model, type = "intervals", prob = 0.9)
-autoplot(model_equivilance_model, size = 0.05, type = "ROPE") #1% difference in accuracy
+
+model_accuracies <- autoplot(model_equivilance_model, type = "intervals", prob = 0.9) + guides(colour = 'none') 
+model_ropes <- autoplot(model_equivilance_model, size = 0.01, type = "ROPE") + #1% difference in accuracy
+  geom_hline(yintercept = 1 - 0.1, linetype = 'dashed')
+
+combined_model_plot <- model_accuracies + model_ropes + plot_layout(nrow = 1) & theme_classic()
+ggsave('../Results/post_tuning_model_quality.png', plot = combined_model_plot, height = 7, width = 14)
 
 #### Pick Equivilant Models ####
 find_equivilent_models <- function(wflowset, size, cutoff = NA){
@@ -464,13 +507,13 @@ find_equivilent_models <- function(wflowset, size, cutoff = NA){
     filter(pract_equiv >= 1 - cutoff)
 }
 
-top_wflows <- find_equivilent_models(model_equivilance_model, 0.05, 0.3)
+top_wflows <- find_equivilent_models(model_equivilance_model, 0.01, 0.1)
 
 top_disease_models <- top_wflows %>%
   rowwise %>%
   mutate(wflowset = list(extract_workflow_set_result(disease_model_tune, model)),
          # race_plot = list(plot_race(wflowset)),
-         best_params = list(select_best(wflowset, 'bal_accuracy')),
+         best_params = list(select_best(wflowset, 'mn_log_loss')),
          final_wflow = list(extract_workflow(disease_model_tune, model) %>%
                               finalize_workflow(best_params)),
          
@@ -494,7 +537,7 @@ top_disease_models <- top_wflows %>%
 #### Assess Model Accuracy on Test Dataset ####
 top_disease_models %>%
   dplyr::select(model, bal_accuracy:mn_log_loss) %>%
-  arrange(-bal_accuracy)
+  arrange(-bal_accuracy, mn_log_loss)
 
 top_disease_models  %>%
   arrange(-bal_accuracy) %>%
@@ -506,3 +549,29 @@ dplyr::select(top_disease_models, -mean:-upper,
               -contains('race_plot'), -conf_mat) %>%
   ungroup %>%
   write_rds('../intermediate_files/top_disease_models.rds.gz')
+
+
+#### Test-set metrics all models ####
+test_set_metrics <- disease_model_tune %>%
+  filter(!str_detect(wflow_id, 'null')) %>%
+  rowwise %>%
+  mutate(best_params = list(select_best(result, 'mn_log_loss')),
+         final_wflow = list(extract_workflow(disease_model_tune, wflow_id) %>%
+                              finalize_workflow(best_params)),
+         
+         final_wflow = list(last_fit(final_wflow, coral_split, 
+                                     metrics = metric_set(bal_accuracy, accuracy, 
+                                                          brier_class, mn_log_loss,
+                                                          f_meas, j_index,
+                                                          mcc, kap,
+                                                          precision, recall,
+                                                          sens, spec))),
+         
+         collect_metrics(final_wflow) %>%
+           dplyr::select(.metric, .estimate) %>%
+           pivot_wider(names_from = '.metric',
+                       values_from = '.estimate')) %>%
+  ungroup %>%
+  dplyr::select(-where(is.list)) %>%
+  arrange(mn_log_loss)
+write_csv(test_set_metrics, '../Results/test_set_metrics.csv')
