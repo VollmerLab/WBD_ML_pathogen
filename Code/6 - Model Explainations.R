@@ -157,8 +157,9 @@ model_important_asvs %>% #count(asv_rank)
   geom_bump() +
   geom_point() +
   
-  # geom_text(data = . %>% filter(model == levels(model)[1]),
-  #           aes(label = higher_taxonomy, x = model)) +
+  geom_text(data = . %>% filter(model == levels(model)[1]),
+            aes(label = asv_id, x = model),
+            vjust = -1) +
   
   # coord_cartesian(ylim=c(MAX_ASV, 1)) +
   # scale_y_reverse(labels = 1:MAX_ASV, breaks = 1:MAX_ASV) +
@@ -195,6 +196,43 @@ individual_shap_values %>%
 shapviz(object = shap_mat, X = value_mat) %>%
   sv_dependence(v = 'ASV25')
 
+shap_dependence_plot <- function(shaps, asv, colour_var = 'health'){
+  shaps %>%
+    filter(asv_id == asv) %>%
+    ggplot(aes(x = value, y = shap, colour = !!sym(colour_var))) +
+    geom_point() +
+    facet_wrap(~model) +
+    labs(x = str_c('log2cpm ', asv),
+         y = 'SHAP Value',
+         colour = str_to_sentence(colour_var)) +
+    theme_classic()
+}
+
+shap_dependence_plot(individual_shap_values, asv = 'ASV30')
+
 #### SHAP Force Plot ####
+shap_force_plot <- function(shaps, max_asv, plot_samples = 'test'){
+  individual_shap_values %>%
+    filter(test_train == 'test') %>%
+    filter(sample_id == '2016_S_CK14_D_314') %>%
+    filter(model == 'base_rda') %>%
+    arrange(-abs(shap))
+}
+
 shapviz(object = shap_mat, X = value_mat) %>%
   sv_force(row_id = 109L, max_display = 10)
+
+#### Plot important ASVs by health ####
+training(coral_split) 
+testing(coral_split) %>%
+  ggplot(aes(x = health, y = ASV700)) +
+  geom_boxplot()
+
+
+model_important_asvs
+
+
+filter(model_important_asvs,
+       asv_rank <= MAX_ASV) %>%
+  arrange(asv_rank) %>%
+  filter(model == 'base_rda')
