@@ -6,6 +6,9 @@
 # }
 
 ##TODO - figure out wtf happened with the corr_rda 
+##TODO - make so top model is chosen based on mix of metrics not just one (desireability2)
+##TODO - swap MLP off of using brulee - cant get torch installed
+##TODO - fix to make the saved wflow file be the fit wflow not the parameterization
 
 if(!interactive()){
   rerun_process <- TRUE
