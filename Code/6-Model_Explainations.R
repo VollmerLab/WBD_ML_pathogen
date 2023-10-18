@@ -1,15 +1,16 @@
 ##TODO - individual shap plots https://stackoverflow.com/questions/71662140/create-shap-plots-for-tidymodel-objects
 ##TODO - summary shap plots https://christophm.github.io/interpretable-ml-book/shap.html#shap-feature-importance
 
+#TODO - split shaps across more nodes regardless of train/test stuff
 #TODO - Sort out how to make force/waterfall plots
-#TODO - swap to doRNG
+#TODO - fix "explain" function to use %dorng%
 
 if(!interactive()){
   rerun_shap <- TRUE
   NSIM <- 100
 } else {
   rerun_shap <- FALSE
-  NSIM <- 10
+  NSIM <- 1
 }
 
 MAX_ASV <- 10
@@ -24,11 +25,13 @@ maxZ <- 2
 
 library(batchtools)
 library(doFuture)
+library(doRNG)
 library(tidyverse)
 library(magrittr)
 library(tidymodels)
 library(workflows)
 library(workflowsets)
+library(desirability2)
 library(discrim)
 library(themis)
 library(fastshap)
@@ -46,6 +49,15 @@ if(Sys.info()['sysname'] != 'Windows'){
 coral_split <- read_rds('../intermediate_files/coral_split.rds.gz')
 taxonomy <- read_csv('../intermediate_files/taxonomy.csv.gz', show_col_types = FALSE) %>%
   mutate(across(everything(), str_replace_na))
+
+tank_data <- read_csv('../intermediate_files/normalized_tank_asv_counts.csv', 
+                      show_col_types = FALSE) %>%
+  filter(geno != 'GE', time == '8_exp',
+         anti == 'N', health == 'D') %>%
+  select(asv_id, sample_id, resist, log2_cpm_norm) %>%
+  rename(health = resist) %>%
+  mutate(health = str_replace_all(health, c('R' = 'H', 'S' = 'D')) %>% factor()) %>%
+  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
 
 all_models <- list.files('../Results/model_tuning/models', pattern = 'rds.gz$', full.names = TRUE) %>%
   R.utils::getAbsolutePath() %>%
@@ -65,7 +77,7 @@ model_stats <- read_rds('../Results/model_tuning_metrics.rds.gz') %>%
             .groups = 'drop')
 
 equivilant_models <- read_csv('../Results/equivilant_top_models.csv.gz', show_col_types = FALSE) %>%
-  filter(pract_equiv == 1) %>%
+  # filter(pract_equiv == 1) %>%
   rename(wflow_id = model)
 
 #### Join Models and arrange ####
@@ -78,9 +90,14 @@ top_disease_models <- inner_join(equivilant_models,
               pivot_wider(names_from = '.metric',
                           values_from = 'mean'),
             by = 'wflow_id') %>%
-  mutate(wflow_id = fct_reorder(wflow_id, brier_class)) %>%
-  arrange(brier_class) %>%
-  filter(accuracy >= min_test_accuracy)
+  
+  mutate(bacc_d = d_max(bal_accuracy, use_data = TRUE),
+         loss_d = d_min(mn_log_loss, use_data = TRUE),
+         brier_d = d_min(brier_class, use_data = TRUE),
+         overall = d_overall(across(ends_with("_d")))) %>%
+  dplyr::select(-ends_with('_d')) %>%
+  mutate(wflow_id = fct_reorder(wflow_id, overall)) %>%
+  arrange(overall) 
 
 #### Calculate SHAP Values ####
 if(file.exists('../intermediate_files/model_shaps.csv.gz') & !rerun_shap){
@@ -100,7 +117,7 @@ if(file.exists('../intermediate_files/model_shaps.csv.gz') & !rerun_shap){
     if(all(is.na(features))){
       features <- colnames(select(data, where(is.numeric)))
     }
-    
+    `%dopar%` <- `%dorng%`
     model_shap <- explain(model, 
                           feature_names = features,
                           X = data,
@@ -113,6 +130,7 @@ if(file.exists('../intermediate_files/model_shaps.csv.gz') & !rerun_shap){
   }
   
   slurm_calc_shap <- function(shap_sets){
+    # registerDoRNG()
     registerDoFuture()
     plan(cluster, workers = 20)
     
@@ -138,7 +156,8 @@ if(file.exists('../intermediate_files/model_shaps.csv.gz') & !rerun_shap){
   }
   
   reg <- makeRegistry(file.dir = paste0(getwd(), '/../batch_files_shap'), 
-                      packages = c('doFuture', 'tidyverse', 'tidymodels',
+                      packages = c('doFuture', 'doRNG',
+                                   'tidyverse', 'tidymodels',
                                    'discrim', 'bonsai', 'baguette',
                                    'plsmod', 'rules', 'themis', 'finetune',
                                    'fastshap'))
@@ -155,17 +174,19 @@ if(file.exists('../intermediate_files/model_shaps.csv.gz') & !rerun_shap){
   # walk(paste0(getwd(), '/../Results/', c('plots', 'metrics', 'models')),
   #      ~dir.create(.x, recursive = TRUE, showWarnings = FALSE))
   
-  while(length(successful_jobs) < (nrow(top_disease_models) * 2) & z < maxZ){
+  while(length(successful_jobs) < (nrow(top_disease_models) * 3) & z < maxZ){
     z <- z + 1
     
     incomplete_shaps <- top_disease_models %>%
-      expand_grid(test_train = c('test', 'train')) %>%
+      expand_grid(test_train = c('test', 'train', 'tank')) %>%
+      # mutate(test_train = 'train') %>%
       mutate(job_id = str_c(wflow_id, test_train, sep = '_')) %>%
       filter(!job_id %in% successful_jobs) %>%
       
       mutate(train_data = list(analysis(coral_split)),
-             new_data = case_when(test_train == 'test' ~ list(analysis(coral_split)),
-                                  test_train == 'train' ~ list(assessment(coral_split)))) %>%
+             new_data = case_when(test_train == 'test' ~ list(assessment(coral_split)),
+                                  test_train == 'train' ~ list(analysis(coral_split)),
+                                  test_train == 'tank' ~ list(tank_data))) %>%
       select(job_id, wflow_id, wflow_file, train_data, test_train, new_data)
     
     # incomplete_shaps <- sample_n(incomplete_shaps, 5)
@@ -214,6 +235,7 @@ individual_shap_values <- top_shaps %>%
                names_pattern = '(.*)_(.*)')
 
 model_important_asvs <- individual_shap_values %>%
+  # filter(test_train == 'train') %>%
   group_by(wflow_id, asv_id) %>%
   summarise(shap_importance = mean(abs(shap)),
             .groups = 'drop') %>%
@@ -273,9 +295,9 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
   geom_bump() +
   geom_point() +
   
-  geom_text(data = . %>% filter(model == levels(model)[1]),
-            aes(label = asv_id, x = model),
-            vjust = -1) +
+  # geom_text(data = . %>% filter(model == levels(model)[1]),
+  #           aes(label = asv_id, x = model),
+  #           vjust = -1) +
   
   # coord_cartesian(ylim=c(MAX_ASV, 1)) +
   # scale_y_reverse(labels = 1:MAX_ASV, breaks = 1:MAX_ASV) +
@@ -287,6 +309,49 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
   theme(legend.position = 'bottom',
         legend.direction = 'horizontal')
 ggsave('../Results/shap_importance_bump.png', plot = shap_importance_bump, height = 7, width = 10)
+
+#### SHAP Family Importance ####
+individual_shap_values %>%
+  # filter(test_train == 'train') %>%
+  # left_join(taxonomy, by = c('asv_id')) %>%
+  group_by(wflow_id, asv_id) %>%
+  summarise(shap_importance = mean(abs(shap)),
+            .groups = 'drop') %>%
+  left_join(taxonomy, by = 'asv_id') %>%
+  group_by(wflow_id, family) %>%
+  summarise(shap_importance = sum(shap_importance),
+            n_asv = n_distinct(asv_id),
+            .groups = 'drop_last') %>%
+  mutate(taxa_rank = rank(-shap_importance)) %>%
+  ungroup %>%
+  select(wflow_id, family, shap_importance, taxa_rank, n_asv) %>%
+  
+  filter(taxa_rank <= 5) %>%
+  mutate(family = fct_reorder(family, taxa_rank)) %>% 
+  rename(model = wflow_id) %>%
+  
+  ggplot(aes(x = model, y = shap_importance, 
+             color = family, 
+             group = family)) +
+  
+  
+  
+  geom_bump() +
+  geom_point(aes(size = n_asv)) +
+  
+  # geom_text(data = . %>% filter(model == levels(model)[1]),
+  #           aes(label = asv_id, x = model),
+  #           vjust = -1) +
+  
+  # coord_cartesian(ylim=c(MAX_ASV, 1)) +
+  # scale_y_reverse(labels = 1:MAX_ASV, breaks = 1:MAX_ASV) +
+  guides(colour = guide_legend(ncol = 3)) + 
+  labs(x = NULL,
+       y = 'SHAP Importance Ranking',
+       colour = NULL) +
+  theme_classic() +
+  theme(legend.position = 'bottom',
+        legend.direction = 'horizontal')
 
 #### SHAP Summary ####
 shap_summary_plot <- individual_shap_values %>% 
@@ -309,6 +374,39 @@ shap_summary_plot <- individual_shap_values %>%
   scale_color_distiller(type = 'div', palette = 'Spectral') +
   labs(y = NULL)
 ggsave('../Results/shap_summary_facets.png', plot = shap_summary_plot, height = 21, width = 21)
+
+#### Directional Shap Importance ####
+individual_shap_values %>%
+  group_by(wflow_id, health, asv_id) %>%
+  summarise(shap = mean(shap),
+            .groups = 'drop') %>%
+  inner_join(filter(model_important_asvs, asv_rank <= MAX_ASV),
+             by = c('wflow_id', 'asv_id')) %>%
+  mutate(higher_taxonomy = fct_reorder(higher_taxonomy, asv_rank)) %>% 
+  rename(model = wflow_id) %>%
+  
+  ggplot(aes(x = model, y = shap, 
+             color = higher_taxonomy, 
+             group = interaction(asv_id, health))) +
+  
+  
+  
+  geom_bump() +
+  geom_point() +
+  
+  # geom_text(data = . %>% filter(model == levels(model)[1]),
+  #           aes(label = asv_id, x = model),
+  #           vjust = -1) +
+  
+  # coord_cartesian(ylim=c(MAX_ASV, 1)) +
+  # scale_y_reverse(labels = 1:MAX_ASV, breaks = 1:MAX_ASV) +
+  guides(colour = guide_legend(ncol = 3)) + 
+  labs(x = NULL,
+       y = 'SHAP Importance Ranking',
+       colour = NULL) +
+  theme_classic() +
+  theme(legend.position = 'bottom',
+        legend.direction = 'horizontal')
 
 #### SHAP Dependence Plots ####
 # shapviz(object = shap_mat, X = value_mat) %>%

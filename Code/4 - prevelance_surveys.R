@@ -141,7 +141,7 @@ count(prevelance_data, timepoint, season)
 count(prevelance_data, timepoint, year)
 count(prevelance_data, timepoint, date, site)
 
-car::Anova(full_model)
+car::Anova(full_model, test.statistic = 'LR')
 
 model_grid <- ref_grid(full_model)
 

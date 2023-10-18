@@ -5,9 +5,6 @@
 #   .libPaths("~/R/x86_64-pc-linux-gnu-library/4.2")
 # }
 
-##TODO - figure out wtf happened with the corr_rda 
-##TODO - make so top model is chosen based on mix of metrics not just one (desireability2)
-##TODO - swap MLP off of using brulee - cant get torch installed
 ##TODO - fix to make the saved wflow file be the fit wflow not the parameterization
 
 if(!interactive()){
@@ -15,7 +12,7 @@ if(!interactive()){
   reduce_modelset <- FALSE
 } else {
   rerun_process <- FALSE
-  reduce_modelset <- TRUE
+  reduce_modelset <- FALSE
 }
 
 maxZ <- 2
@@ -40,6 +37,7 @@ library(plsmod)
 library(rules)
 library(themis)
 library(finetune)
+library(desirability2)
 
 
 
@@ -53,10 +51,15 @@ field_data <- read_csv('../intermediate_files/normalized_field_asv_counts.csv',
                        show_col_types = FALSE) %>%
   mutate(across(domain:genus, str_replace_na)) 
 
-field_data %>%
-  select(asv_id, domain:genus) %>%
-  distinct %>%
-  write_csv('../intermediate_files/taxonomy.csv.gz')
+tank_data <- read_csv('../intermediate_files/normalized_tank_asv_counts.csv', 
+                      show_col_types = FALSE)
+
+if(!file.exists('../intermediate_files/taxonomy.csv.gz')){
+  field_data %>%
+    select(asv_id, domain:genus) %>%
+    distinct %>%
+    write_csv('../intermediate_files/taxonomy.csv.gz')
+}
 
 #### Split data ####
 field_data_wide <- select(field_data, asv_id, sample_id, log2_cpm_norm, health) %>%
@@ -68,6 +71,14 @@ taxonomy <- select(field_data, asv_id, domain:genus) %>%
 
 metadata <- select(field_data, sample_id, health, year, season, site) %>%
   distinct
+
+tank_data_wide <- tank_data %>%
+  filter(geno != 'GE', time == '8_exp',
+         anti == 'N', health == 'D') %>%
+  select(asv_id, sample_id, resist, log2_cpm_norm) %>%
+  rename(health = resist) %>%
+  mutate(health = str_replace_all(health, c('R' = 'H', 'S' = 'D')) %>% factor()) %>%
+  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
 
 #### Train/Test Split ####
 if(file.exists('../intermediate_files/coral_split.rds.gz') & !rerun_process){
@@ -295,14 +306,11 @@ pls_model <- pls() %>%
            num_comp = tune())
 
 mlp_model <- mlp() %>%
-  set_engine('brulee') %>%
+  set_engine('nnet') %>%
   set_mode('classification') %>%
   set_args(hidden_units = tune(),
-           # penalty = tune(),
-           epochs = tune(),
-           dropout = tune(),
-           learn_rate = tune(),
-           activation = tune())
+           penalty = tune(),
+           epochs = tune())
 
 mars_model <- mars() %>%
   set_engine('earth',
@@ -315,42 +323,43 @@ mars_model <- mars() %>%
 #### Make Workflow Set ####
 disease_wflow <- workflow_set(
   preproc = list(base = preprocess_recipie,
-                 corr = correlation_recipie,
+                 # corr = correlation_recipie,
                  pca = pca_recipie,
                  pls = pls_recipie),
   # preproc = list(base = preprocess_recipie),
   models = list(null = default_model,
-                ridge = ridge_model,
+                # ridge = ridge_model,
                 lasso = lasso_model,
-                elasticNet = elasticNet_model,
-                c5 = c5_model,
-                rule = rule_model,
+                # elasticNet = elasticNet_model,
+                # c5 = c5_model,
+                # rule = rule_model,
                 forest = forest_model, 
-                boostTree = boostTree_model,
+                # boostTree = boostTree_model,
                 decision = decision_model,
-                bart = bart_model,
+                # bart = bart_model,
                 lda = lda_model,
-                fda = fda_model,
-                qda = qda_model,
+                # fda = fda_model,
+                # qda = qda_model,
                 rda = rda_mode,
-                nb = nb_model,
+                # nb = nb_model,
                 svmLinear = svmLinear_model,
-                svmPOLY = svmPOLY_model,
-                svmRBF = svmRBF_model,
-                bagMARS = bagMARS_model,
-                bagMLP = bagMLP_model,
-                bagTree = bagTree_model,
+                # svmPOLY = svmPOLY_model,
+                # svmRBF = svmRBF_model,
+                # bagMARS = bagMARS_model,
+                # bagMLP = bagMLP_model,
+                # bagTree = bagTree_model,
                 knn = knn_model,
                 pls = pls_model,
-                mlp = mlp_model,
-                mars = mars_model),
+                # mars = mars_model,
+                mlp = mlp_model),
   cross = TRUE) %>%
   
   #Remove combos that don't make sense
   anti_join(tibble(wflow_id = c("pca_lasso", "corr_lasso", 'pls_lasso',
                                 "pca_ridge", "corr_ridge", 'pls_ridge',
                                 "pca_elasticNet", "corr_elasticNet", 'pls_elasticNet',
-                                'base_mars', 'base_bagMARS', 'pls_pls')),
+                                'base_mars', 'base_bagMARS', 'pls_pls', 'pca_pls',
+                                'pca_rda', 'pls_rda', 'base_lda')),
             by = "wflow_id") %>%
   sample_frac(1) %>% #randomize order
   
@@ -407,7 +416,7 @@ workflow_tuning <- function(wflowset){
                resamples = coral_folds, 
                initial = 50,
                iter = 200,
-               metrics = metric_set(mn_log_loss, brier_class,
+               metrics = metric_set(brier_class, mn_log_loss,
                                     bal_accuracy, accuracy,
                                     j_index, roc_auc,
                                     mcc, kap,
@@ -425,8 +434,7 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
 } else {
   
   if(Sys.info()['sysname'] != 'Windows'){
-    
-    workflow_post_process <- function(wflows, rank_metric, train_test_split, outdir){
+    workflow_post_process <- function(wflows, rank_metric, train_test_split, tankDat, outdir){
       top_fits <- rank_results(wflows, rank_metric = rank_metric, select_best = TRUE) %>%
         dplyr::select(wflow_id, .config) %>%
         distinct
@@ -460,8 +468,26 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
                     values_from = '.estimate') %>%
         bind_cols(best_params, .)
       
+      #add tank tankDat fit & metrics
+      all_metrics <- metric_set(bal_accuracy, accuracy, 
+                                brier_class, mn_log_loss,
+                                f_meas, j_index,
+                                mcc, kap,
+                                precision, recall,
+                                sens, spec)
       
-      out_metrics <- bind_rows(test = test_metrics,
+      tank_metrics <- bind_cols(dplyr::select(tankDat, sample_id, health), 
+                predict(final_wflow$.workflow[[1]], new_data = tankDat, type = 'class'),
+                predict(final_wflow$.workflow[[1]], new_data = tankDat, type = 'prob')) %>%
+        all_metrics(truth = health, estimate = .pred_class, .pred_D) %>%
+        dplyr::select(.metric, .estimate) %>%
+        pivot_wider(names_from = '.metric',
+                    values_from = '.estimate') %>%
+        bind_cols(best_params, .)
+      
+      
+      out_metrics <- bind_rows(tank = tank_metrics,
+                               test = test_metrics,
                                train = train_metrics,
                                .id = 'train_test') %>%
         relocate(.config, starts_with('id'), contains('.iter'), 
@@ -496,7 +522,7 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
       if(!(length(none_worked) > 0 | length(all_error) > 0)){
       ## Output plot
       plot_location <- paste0(file_out, '/plots')
-      top_config <- rank_results(trained_wflow, rank_metric = 'mn_log_loss', select_best = TRUE) %>%
+      top_config <- rank_results(trained_wflow, rank_metric = 'brier_class', select_best = TRUE) %>%
         pull(.config) %>%
         unique
       
@@ -521,8 +547,9 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
       ## Get model metrics
       ## Fit Final Model
       ## Get test metrics
-      out <- workflow_post_process(trained_wflow, rank_metric = 'mn_log_loss', 
-                                   train_test_split = coral_split, 
+      out <- workflow_post_process(trained_wflow, rank_metric = 'brier_class', 
+                                   train_test_split = coral_split,
+                                   tankDat = tank_data,
                                    outdir = file_out)
       
       } else {
@@ -565,6 +592,7 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
       batchMap(fun = slurm_wflow_tune, wflowset = all_wflows)
       batchExport(list(coral_folds = coral_folds,
                        coral_split = coral_split,
+                       tank_data = tank_data_wide,
                        workflow_tuning = workflow_tuning,
                        workflow_post_process = workflow_post_process,
                        file_out = paste0(getwd(), '/../Results/model_tuning')))
@@ -591,78 +619,117 @@ if(file.exists('../intermediate_files/model_tune_run.rds.gz') & !rerun_process){
                 by = 'wflow_id')
     
     #plot top model metrics
-    model_tune_plot <- disease_model_tune %>%
+    model_tune_dat <- disease_model_tune %>%
       
       group_by(wflow_id) %>%
       #get rid of failures
       filter(n() > 1) %>%
       filter(.config == .config[train_test == 'test']) %>%
-      filter(train_test != 'test') %>%
+      filter(!train_test %in% c('test', 'tank')) %>%
       ungroup %>%
       dplyr::select(-params) %>%
-      mutate(wflow_id = fct_reorder(wflow_id, mn_log_loss, .fun = mean, .na_rm = TRUE)) %>%
+      mutate(wflow_id = fct_reorder(wflow_id, brier_class, .fun = mean, .na_rm = TRUE)) 
+    
+    # model_tune_plot <- model_tune_dat %>%
+    #   pivot_longer(cols = -c(wflow_id:.iter),
+    #                names_to = '.metric') %>%
+    #   filter(!is.na(value)) %>%
+    #   group_by(wflow_id, .metric) %>%
+    #   summarise(mean = mean(value),
+    #             se = sd(value) / sqrt(n()),
+    #             .groups = 'drop') %>%
+    #   # arrange(wflow_id) %>% filter(.metric == 'mn_log_loss')
+    #   
+    #   ggplot(aes(x = as.integer(wflow_id), y = mean, ymin = mean - se, ymax = mean + se,
+    #              colour = wflow_id)) +
+    #   geom_pointrange() +
+    #   facet_wrap(~ .metric, scales = 'free_y') +
+    #   theme_classic()
+    # 
+    # select(model_tune_dat, wflow_id) %>%
+    #   distinct
+    # 
+    # disease_model_tune %>%
+    #   # filter(train_test %in% c('test', 'tank')) %>%
+    #   mutate(wflow_id = factor(wflow_id, levels = levels(model_tune_dat$wflow_id))) %>%
+    #   
+    #   ggplot(aes(x = as.integer(wflow_id), y = mean, ymin = mean - se, ymax = mean + se,
+    #              colour = wflow_id, shape = train_test))
+    
+    model_tune_plot <- disease_model_tune %>%
+      select(-params) %>%
+      group_by(wflow_id) %>%
+      #get rid of failures
+      filter(n() > 1) %>%
+      filter(.config == .config[train_test == 'test']) %>%
+      ungroup %>%
       pivot_longer(cols = -c(wflow_id:.iter),
                    names_to = '.metric') %>%
       filter(!is.na(value)) %>%
-      group_by(wflow_id, .metric) %>%
+      group_by(train_test, wflow_id, .metric) %>%
       summarise(mean = mean(value),
                 se = sd(value) / sqrt(n()),
                 .groups = 'drop') %>%
-      # arrange(wflow_id) %>% filter(.metric == 'mn_log_loss')
+      mutate(wflow_id = factor(wflow_id, levels = levels(model_tune_dat$wflow_id))) %>%
       
       ggplot(aes(x = as.integer(wflow_id), y = mean, ymin = mean - se, ymax = mean + se,
-                 colour = wflow_id)) +
+                 colour = wflow_id, shape = train_test)) +
       geom_pointrange() +
       facet_wrap(~ .metric, scales = 'free_y') +
       theme_classic()
+    
     ggsave('../Results/model_tuning_results.png', plot = model_tune_plot, height = 21, width = 21)
     
     #write csv/rds of all metrics
     write_rds(disease_model_tune, '../Results/model_tuning_metrics.rds.gz')
     
   } else {
-    registerDoFuture()
-    plan(cluster, workers = parallel::makeCluster(parallel::detectCores(logical = FALSE)))
-    
-    disease_model_tune <- workflow_tuning(disease_wflow)
-    
-    remove_errors <- function(wfset){
+    if(file.exists('../Results/model_tuning_metrics.rds.gz') & !rerun_process){
+      disease_model_tune <- read_rds('../Results/model_tuning_metrics.rds.gz')
+    } else {
+      registerDoFuture()
+      plan(cluster, workers = parallel::makeCluster(parallel::detectCores(logical = FALSE)))
       
-      all_error <- map_lgl(wfset$result, ~'try-error' %in% class(.)) %>%
-        which
+      disease_model_tune <- workflow_tuning(disease_wflow)
       
-      if(length(all_error) > 0){
-        message('Models failed with all errors: ', str_c(wfset$wflow_id[all_error], collapse = '; '))
-        wfset <- slice(wfset, -1 * all_error)
-      } 
+      remove_errors <- function(wfset){
+        
+        all_error <- map_lgl(wfset$result, ~'try-error' %in% class(.)) %>%
+          which
+        
+        if(length(all_error) > 0){
+          message('Models failed with all errors: ', str_c(wfset$wflow_id[all_error], collapse = '; '))
+          wfset <- slice(wfset, -1 * all_error)
+        } 
+        
+        
+        none_worked <- map_lgl(wfset$result, ~all(map_lgl(.x$.metrics, is.null))) %>%
+          which
+        
+        if(length(none_worked) > 0){
+          message('Models failed because none worked: ', str_c(wfset$wflow_id[none_worked], collapse = '; '))
+          wfset <- slice(wfset, -1 * none_worked)
+        } 
+        
+        wfset
+      }
       
+      disease_model_tune <- remove_errors(disease_model_tune)
       
-      none_worked <- map_lgl(wfset$result, ~all(map_lgl(.x$.metrics, is.null))) %>%
-        which
+      # all_models_tune <- autoplot(disease_model_tune, metric = "bal_accuracy")
+      model_tune_plot <- autoplot(disease_model_tune, select_best = TRUE, 
+                                  # metric = c('accuracy', 'bal_accuracy', "mn_log_loss"), 
+                                  rank_metric = "brier_class")
+      ggsave('../Results/model_tuning_results.png', plot = model_tune_plot, height = 21, width = 21)
+      # autoplot(disease_model_tune, id = 'pls_qda', metric = "bal_accuracy")
       
-      if(length(none_worked) > 0){
-        message('Models failed because none worked: ', str_c(wfset$wflow_id[none_worked], collapse = '; '))
-        wfset <- slice(wfset, -1 * none_worked)
-      } 
+      collect_metrics(disease_model_tune, summarize = FALSE)  %>%
+        pivot_wider(names_from = '.metric',
+                    values_from = '.estimate') %>%
+        write_csv('../intermediate_files/model_tuning_metrics.csv.gz')
       
-      wfset
+      write_rds(disease_model_tune, '../intermediate_files/model_tune_run.rds.gz') 
     }
-    
-    disease_model_tune <- remove_errors(disease_model_tune)
-    
-    # all_models_tune <- autoplot(disease_model_tune, metric = "bal_accuracy")
-    model_tune_plot <- autoplot(disease_model_tune, select_best = TRUE, 
-                                # metric = c('accuracy', 'bal_accuracy', "mn_log_loss"), 
-                                rank_metric = "mn_log_loss")
-    ggsave('../Results/model_tuning_results.png', plot = model_tune_plot, height = 21, width = 21)
-    # autoplot(disease_model_tune, id = 'pls_qda', metric = "bal_accuracy")
-    
-    collect_metrics(disease_model_tune, summarize = FALSE)  %>%
-      pivot_wider(names_from = '.metric',
-                  values_from = '.estimate') %>%
-      write_csv('../intermediate_files/model_tuning_metrics.csv.gz')
-   
-    write_rds(disease_model_tune, '../intermediate_files/model_tune_run.rds.gz') 
   }
 }
 
@@ -677,12 +744,19 @@ if(file.exists('../intermediate_files/model_equivilance.rds.gz') & !rerun_proces
       #get rid of failures
       filter(n() > 1) %>%
       filter(.config == .config[train_test == 'test']) %>%
-      filter(train_test != 'test') %>%
+      filter(!train_test %in% c('test', 'tank')) %>%
       ungroup %>%
       dplyr::select(-params) %>%
-      dplyr::select(wflow_id, starts_with('id'), bal_accuracy) %>%
+      
+      mutate(bacc_d = d_max(bal_accuracy, use_data = TRUE),
+             loss_d = d_min(mn_log_loss, use_data = TRUE),
+             brier_d = d_min(brier_class, use_data = TRUE),
+             rocAUC_d = d_max(roc_auc, use_data = TRUE),
+             overall = d_overall(across(ends_with("_d")))) %>%
+      
+      dplyr::select(wflow_id, starts_with('id'), overall) %>%
       pivot_wider(names_from = 'wflow_id',
-                  values_from = 'bal_accuracy')
+                  values_from = 'overall')
     
   } else {
     get_best_fit_stats <- function(wflows, metric, rank_metric){
@@ -712,7 +786,8 @@ if(file.exists('../intermediate_files/model_equivilance.rds.gz') & !rerun_proces
   
   model_equivilance_model <- top_stats_all_models %>%
     mutate(across(where(is.numeric), ~if_else(. == 1, . - 1e-6, .)),
-           across(where(is.numeric), ~binomial(link = 'logit')$linkfun(.))) %>%
+           across(where(is.numeric), ~if_else(. == 0, . + 1e-6, .)),
+           across(where(is.numeric), ~binomial(link = 'logit')$linkfun(.))) %>% 
     perf_mod(#formula = ,
       #transform = logit_trans,
       # family = 'binomial',
@@ -723,12 +798,36 @@ if(file.exists('../intermediate_files/model_equivilance.rds.gz') & !rerun_proces
       iter = 2000,
       warmup = 1000,
       refresh = 10) %>%
-    model_class_tweak(metric = 'bal_accuracy', direction = 'maximize')
+    model_class_tweak(metric = 'overall', direction = 'maximize')
   
   write_rds(model_equivilance_model, '../intermediate_files/model_equivilance.rds.gz')
 }
 
-model_accuracies <- autoplot(model_equivilance_model, type = "intervals", prob = 0.9) + guides(colour = 'none') 
+# model_accuracies <- autoplot(model_equivilance_model, type = "intervals", prob = 0.9) + guides(colour = 'none')
+
+perf_sum_out <- tidy(model_equivilance_model) %>%
+  summary(model, prob = 0.9) %>%
+  mutate(train_test = 'train',
+         model = fct_reorder(model, -mean))
+
+model_accuracies <- filter(disease_model_tune, train_test %in% c('test', 'tank')) %>%
+  mutate(bacc_d = d_max(bal_accuracy, use_data = TRUE),
+         loss_d = d_min(mn_log_loss, use_data = TRUE),
+         brier_d = d_min(brier_class, use_data = TRUE),
+         # rocAUC_d = d_max(roc_auc, use_data = TRUE),
+         overall = d_overall(across(ends_with("_d")))) %>%
+  select(train_test, wflow_id, overall) %>%
+  rename(mean = overall,
+         model = wflow_id) %>%
+  mutate(model = factor(model, levels = levels(perf_sum_out$model))) %>%
+  bind_rows(perf_sum_out) %>%
+  ggplot(aes(x = as.integer(model), y = mean, ymin = lower, ymax = upper,
+             colour = model, shape = train_test)) +
+  geom_pointrange() +
+  guides(colour = 'none') +
+  theme_classic()
+
+
 model_ropes <- autoplot(model_equivilance_model, size = 0.01, type = "ROPE") + #1% difference in accuracy
   geom_hline(yintercept = 1 - 0.05, linetype = 'dashed')
 
