@@ -36,7 +36,8 @@ shap_importance <- read_csv('../intermediate_files/model_shaps_importance.csv.gz
 
 #Plot for pls_lda - want to plot decision boundary - https://stats.stackexchange.com/questions/92157/compute-and-graph-the-lda-decision-boundary
 #https://stackoverflow.com/questions/30619616/how-to-plot-classification-borders-on-an-linear-discrimination-analysis-plot-in
-plot_nonBase <- function(model_name, x = 'PLS1', y = 'PLS2', N_GRID = 100){
+plot_nonBase <- function(model_name, x = 'PLS1', y = 'PLS2', 
+                         N_GRID = 100){
   fit_model <- str_c(model_dir, '/', model_name, '.rds.gz') %>%
     read_rds() %>%
     fit(analysis(coral_split))
@@ -165,8 +166,8 @@ plot_nonBase <- function(model_name, x = 'PLS1', y = 'PLS2', N_GRID = 100){
   }
   out
 }
-plot_nonBase('pls_lda', x = 'PLS1', y = 'PLS2', N_GRID = 1000)
-plot_nonBase('pca_lda', x = 'PC1', y = 'PC2')
+plot_nonBase('pls_lda', x = 'PLS1', y = 'PLS2', N_GRID = 100)
+plot_nonBase('pca_lda', x = 'PC1', y = 'PC2', N_GRID = 100)
 
 model_list %>%
   str_subset('base', negate = TRUE) %>%
@@ -219,6 +220,12 @@ extract_fit_engine(fit_model) %>%
          lambda = extract_fit_engine(fit_model)$lambda[lambda + 1]) %>%
   
   ggplot(aes(x = lambda, y = coef, group = param)) +
-  geom_vline(xintercept = 1.06065935783328e-10) +
+  geom_vline(xintercept = lambda) +
   geom_line()
 
+
+tmp <- extract_fit_engine(fit_model) 
+tmp$beta
+library(vip)
+vi(tmp, lambda = lambda) %>%
+  filter(Importance > 0)

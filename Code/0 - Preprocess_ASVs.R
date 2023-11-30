@@ -48,6 +48,10 @@ count(metadata, dataset, site)
 
 count(metadata, dataset)
 
+filter(metadata, dataset == 'tank',
+       anti != 'A') %>% 
+  count(tank, anti_health)
+
 #### Sort out Experimental Design ####
 sample_data(microbiome_data) %>%
   as_tibble(rownames = 'sample_id') %>%
