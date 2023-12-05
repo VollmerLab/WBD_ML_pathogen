@@ -288,7 +288,7 @@ individual_shap_values <- top_shaps %>%
 
 
 #https://www.datarobot.com/blog/using-feature-importance-rank-ensembling-fire-for-advanced-feature-selection/
-shaps <- filter(individual_shap_values, wflow_id %in% models_use)
+# shaps <- filter(individual_shap_values, wflow_id %in% models_use)
 rank_asvs <- function(shaps, type = 'rank', adjust = 'fdr'){
   #Type must be 'rank' or 'shap'
   if(type == 'rank'){
