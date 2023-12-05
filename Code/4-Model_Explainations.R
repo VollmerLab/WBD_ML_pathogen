@@ -397,12 +397,14 @@ model_important_asvs <- individual_shap_values %>%
 write_csv(model_important_asvs, '../intermediate_files/model_shaps_importance.csv.gz')
 
 #### Overrepresentation of Families ####
-row_fisher <- function(n_sig, n_genome, total_sig, total_genome, direction = 'two.sided'){
-  #http://yulab-smu.top/clusterProfiler-book/chapter2.html#over-representation-analysis
-  data.frame(significant = c(n_sig, total_sig - n_sig), not_significant = c(n_genome - n_sig, total_genome - total_sig - (n_genome - n_sig))) %>%
+row_fisher <- function(x, k, m, N, direction = 'two.sided'){
+  ##https://dputhier.github.io/ASG/practicals/go_statistics_td/go_statistics_td_2015.html
+  data.frame(significant = c(x, m - x),
+             not_significant = c(k - x, N - m - (k - x))) %>%
     fisher.test(alternative = direction) %>%
     tidy
 }
+
 ora_asv <- function(asv_ranks, min_size = 5, lowest_level = 'family'){
   asv_ranks %>%
     mutate(p_adjust = if_else(is.na(p_adjust), 1, p_adjust)) %>%
