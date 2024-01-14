@@ -290,8 +290,8 @@ individual_shap_values <- top_shaps %>%
 #https://www.datarobot.com/blog/using-feature-importance-rank-ensembling-fire-for-advanced-feature-selection/
 # shaps <- filter(individual_shap_values, wflow_id %in% models_use)
 rank_asvs <- function(shaps, type = 'rank', adjust = 'fdr'){
-  #Type must be 'rank' or 'shap'
-  if(type == 'rank'){
+  #Type must be 'rank' or 'shap' or 'model' which then models the rankings
+  if(type == 'rank' | type == 'model'){
     direction <- 'less'
     wide_vals <- shaps %>%
       # filter(test_train == 'train') %>%
@@ -325,16 +325,45 @@ rank_asvs <- function(shaps, type = 'rank', adjust = 'fdr'){
       select(-all_0)
   }
   
-  asv_tests <- filtered_wide_vals %>%
-    pivot_longer(cols = -any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
-    nest(data = -any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
-    mutate(the_row = row_number()) %>%
-    rowwise(any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
-    mutate(other_data = list(bind_rows(.$data[-the_row]))) %>%
+  if(type != 'model'){
+    asv_tests <- filtered_wide_vals %>%
+      pivot_longer(cols = -any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
+      nest(data = -any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
+      mutate(the_row = row_number()) %>%
+      rowwise(any_of(c('asv_id', 'median_rank', 'median_shap', 'all_0'))) %>%
+      mutate(other_data = list(bind_rows(.$data[-the_row]))) %>%
+      
+      summarise(tidy(wilcox.test(data$value, y = other_data$value, alternative = direction)),
+                .groups = 'drop') %>%
+      mutate(p_adjust = p.adjust(p.value, method = adjust), .after = 'p.value')
+  } else {
+    library(glmmTMB)
+    library(emmeans)
     
-    summarise(tidy(wilcox.test(data$value, y = other_data$value, alternative = direction)),
-              .groups = 'drop') %>%
-    mutate(p_adjust = p.adjust(p.value, method = adjust), .after = 'p.value')
+    model_data <- filtered_wide_vals %>%
+      select(-median_rank) %>%
+      pivot_longer(cols = where(is.numeric),
+                   names_to = 'model',
+                   values_to = 'rank') 
+    
+    rank_model <- glmmTMB(rank ~ asv_id + (1 | model),
+                          dispformula = ~asv_id,
+                          data = model_data,
+                          family = Gamma(link = 'log'),
+                          REML = TRUE)
+    
+    asv_tests <- emmeans(rank_model, ~asv_id, type = 'response') %>%
+      as_tibble() %>%
+      left_join(emmeans(rank_model, ~asv_id) %>%
+                  contrast(side = "<", adjust = adjust) %>%
+                  as_tibble() %>%
+                  mutate(asv_id = str_remove(contrast, ' effect')) %>%
+                  select(asv_id, p.value),
+                by = 'asv_id') %>%
+      rename(p_adjust = p.value) %>%
+      mutate(alternative = 'less')
+  }
+  
   
   full_join(select(wide_vals, -contains('all_0')),
             select(asv_tests, -any_of(c('median_rank', 'median_shap', 'all_0'))),
@@ -347,6 +376,7 @@ rank_plot <- function(asv_ranks){
   
   asv_ranks %>%
     filter(!is.na(p_adjust)) %>%
+    select(-any_of(c('response', 'SE', 'df', 'asymp.LCL', 'asymp.UCL'))) %>%
     pivot_longer(cols = -any_of(c('asv_id', 'median_rank', 'median_shap', 'statistic', 
                                   'p.value', 'p_adjust', 'method', 'alternative'))) %>%
     
@@ -373,7 +403,8 @@ rank_plot <- function(asv_ranks){
     theme_classic() 
 }
 
-asv_ranks <- rank_asvs(filter(individual_shap_values, wflow_id %in% models_use), type = 'rank', adjust = 'fdr')
+asv_ranks <- rank_asvs(filter(individual_shap_values, wflow_id %in% models_use), 
+                       type = 'model', adjust = 'fdr')
 write_csv(asv_ranks, '../Results/asv_importance.csv.gz')
 
 rank_plots <- rank_plot(asv_ranks)

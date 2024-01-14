@@ -9,6 +9,8 @@ library(edgeR)
 library(ggvenn)
 library(ggupset)
 
+#### Tank samples to remove for double sequencing?? ####
+remove_samples <- c('Bin1_N_D_YE', 'Bin2_N_D_YE', 'Bin5_N_D_OR')
 
 #### Functions ####
 # data <- otu_tmm
@@ -36,12 +38,80 @@ microbiome_data <- microbiome_raw %>%
                 class != "Chloroplast" & 
                 order != "Chloroplast") %>%
   prune_samples(sample_sums(.) > 1000, .) %>%
-  subset_samples(site != 'MG') #no disease samples
+  subset_samples(site != 'MG') %>% #no disease samples
+  prune_samples(!str_detect(rownames(sample_data(.)), str_c(remove_samples, collapse = '|')), .)
+                 
+
+
 
 metadata <- sample_data(microbiome_data) %>%
   as_tibble(rownames = 'sample_id') %>%
-  mutate(health = if_else(health == 'N', 'H', health))
+  mutate(health = if_else(health == 'N', 'H', health),
+         geno = if_else(geno == 'GE', 'GR', geno),
+         sample_id = str_replace(sample_id, 'GE', 'GR'))
 
+
+sequenced_tank_samples <- filter(metadata, dataset == 'tank') %>%
+  mutate(fragment_id = str_remove(sample_id, 'P[0-9]_')) %>%
+  pull(fragment_id) %>%
+  unique
+
+#Corals put in tank July 11 & dosed with antibiotics
+#July 12 dosed with antibiotics again
+#July 13 post-antibiotic leisson pic - anti_0
+#Homogenates from Sebastian's reef
+#disease dosed 12pm July 13
+#Post disease pic July 15
+
+
+
+# original_tank <- 
+read_csv('../Data/su17_tank_surv_data.csv', 
+                          show_col_types = FALSE) %>%
+  filter(!genotype %in% c('Grey', 'Blue')) %>% #Did not sequence these genotypes for 16s
+  rename_with(~str_replace_all(., c('21' = 'jul14am',	'30' = 'jul14pm',	
+                                    '45' = 'jul15am',	'54' = 'jul15pm',	
+                                    '69' = 'jul16am',	'78' = 'jul16pm',	
+                                    '93' = 'jul17am',	'102' = 'jul17pm',
+                                    '117' = 'jul18am', '126' = 'jul18pm',	
+                                    '141' = 'jul19am',	'150' = 'jul19pm',	
+                                    '165' = 'jul20am',	'174' = 'jul20pm'))) %>%
+  pivot_longer(cols = starts_with('jul'),
+               names_to = 'date',
+               values_to = 'state') %>%
+  
+  #Fix data entry errors
+  mutate(state = case_when(date == 'jul15am' & Block == 5 & 
+                             genotype == 'Green' & antibiotics == 'no_antibiotics' &
+                             exposure == 'disease' ~ 0,
+                           TRUE ~ state)) %>%
+  
+  mutate(tank = str_c('Bin', Block),
+         health = if_else(state == 0, 'H', 'D'),
+         geno = str_sub(genotype, 1, 2) %>% str_to_upper(),
+         date = fct_inorder(date),
+         #no time 0_anti in this dataset - must keep the metadata from before - all are healthy
+         # time = case_when(date %in% c('jul15pm') ~ '2_exp',
+         #                  date %in% c('jul20pm') ~ '8_exp',
+         #                  TRUE ~ 'other'),
+         .keep = 'unused') %>%
+  # filter(time != 'other') %>%
+  
+  pivot_wider(names_from = date, values_from = health) %>%
+  mutate(fragment_id = str_c(tank, if_else(antibiotics == 'no_antibiotics', 'N', 'A'),
+                           if_else(exposure == 'healthy', 'N', 'D'), geno, sep = '_'),
+         .before = everything()) %>%
+  filter(fragment_id %in% sequenced_tank_samples) %>%
+  select(-Condition) %>%
+  filter(jul15am == 'D')
+
+metadata %>%
+  filter(str_detect(sample_id, 'Bin5_N_D_OR'))
+
+#### Swap tank data to original tank data rather than post-processed data ####
+
+
+#### Summary Stats ####
 count(metadata, dataset, year, season)
 count(metadata, dataset, health)
 count(metadata, dataset, site)

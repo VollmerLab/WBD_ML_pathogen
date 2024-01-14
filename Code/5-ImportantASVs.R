@@ -1,3 +1,4 @@
+# cpm ~ (control-healthyEnd, disease-healthyEnd, disease-diseaseEnd) * dosed/not 
 
 #### Libraries ####
 library(tidyverse)
@@ -19,15 +20,19 @@ rerun_models <- FALSE
 the_nmds <- read_rds('../intermediate_files/field_tank_nmds.rds.gz')
 asv_fit <- read_rds('../intermediate_files/field_tank_asvArrows.rds.gz')
 
-model_list <- read_csv('../Results/equivilant_top_models.csv.gz', show_col_types = FALSE) %>%
+model_list <- read_csv('../Results/equivilant_top_models.csv.gz',
+                       show_col_types = FALSE) %>%
   filter(pract_equiv >= 0.95) %>%
   rename(wflow_id = model) %>%
   pull(wflow_id)
 
-taxonomy <- read_csv('../intermediate_files/taxonomy.csv.gz', show_col_types = FALSE) %>%
-  mutate(across(where(is.character), ~str_replace_na(., replacement = '')))
+taxonomy <- read_csv('../intermediate_files/taxonomy.csv.gz',
+                     show_col_types = FALSE) %>%
+  mutate(across(where(is.character), 
+                ~str_replace_na(., replacement = '')))
 
-shap_importance <- read_csv('../Results/asv_importance.csv.gz', show_col_types = FALSE) %>%
+shap_importance <- read_csv('../Results/asv_importance.csv.gz',
+                            show_col_types = FALSE) %>%
   filter(p_adjust < alpha) %>%
   left_join(taxonomy, by = 'asv_id') %>%
   mutate(asv_id = fct_reorder(asv_id, median_rank)) %>%
@@ -624,7 +629,7 @@ tank_asv_models %>%
   ungroup %>%
   pull(plot_fc) %>%
   wrap_plots()
-ggsave('../Results/important_asvs_FC.png', height = 15, width = 15)
+ggsave('../Results/Fig5_important_asvs_FC.png', height = 15, width = 15)
 
 #### Output asv coefficients ####
 asv_coef <- full_join(select(field_asv_models, asv_id, starts_with('mu'), starts_with('fcDH')),
