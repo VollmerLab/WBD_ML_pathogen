@@ -66,7 +66,8 @@ if(!file.exists('../intermediate_files/taxonomy.csv.gz')){
 }
 
 #### Split data ####
-field_data_wide <- select(field_data, asv_id, sample_id, log2_cpm_norm, health) %>%
+field_data_wide <- select(field_data, asv_id, sample_id, 
+                          log2_cpm_norm, health) %>%
   pivot_wider(names_from = asv_id, values_from = log2_cpm_norm) %>%
   mutate(health = factor(health))
 
@@ -78,10 +79,9 @@ metadata <- select(field_data, sample_id, health, year, season, site) %>%
 
 tank_data_wide <- tank_data %>%
   filter(geno != 'GE', time == '8_exp',
-         anti == 'N', health == 'D') %>%
-  select(asv_id, sample_id, resist, log2_cpm_norm) %>%
-  rename(health = resist) %>%
-  mutate(health = str_replace_all(health, c('R' = 'H', 'S' = 'D')) %>% factor()) %>%
+         anti == 'N', exposure == 'D') %>%
+  select(asv_id, sample_id, health, log2_cpm_norm) %>%
+  mutate(health = factor(health, levels = c('D', 'H'))) %>%
   pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
 
 #### Train/Test Split ####

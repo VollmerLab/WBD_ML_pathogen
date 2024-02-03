@@ -17,7 +17,7 @@ ml_model_out <- read_csv('../../Results/asv_importance.csv.gz', show_col_types =
   # ungroup %>%
   filter(FDR < 0.05) %>%
   arrange(domain, phylum, class, order, family, genus, median_rank) %>%
-  select(-method, -alternative, -domain) %>%
+  select(-contains('method'), -contains('alternative'), -contains('domain')) %>%
   relocate(asv_id, .after = 'genus') %>%
   rename_with(~str_remove(., 'base_') %>% 
                 str_replace_all(c('forest' = 'Random Forest',
@@ -27,8 +27,9 @@ ml_model_out <- read_csv('../../Results/asv_importance.csv.gz', show_col_types =
                                   'null' = 'Null',
                                   'pls' = 'PLS',
                                   'svmLinear' = 'SVM'))) %>%
-  mutate(p.value = scales::pvalue(p.value, 0.0001),
-         FDR = scales::pvalue(FDR, 0.001))
+  mutate(#p.value = scales::pvalue(p.value, 0.0001),
+         FDR = scales::pvalue(FDR, 0.001)) %>%
+  arrange(median_rank)
 
 
 
@@ -43,11 +44,14 @@ field_asv_models <- read_rds('../../intermediate_files/field_asv_models.rds.gz')
   ungroup
 
 
-field_out <- select(field_asv_models, asv_id, pct_site, tp_contrasts) %>%
+
+field_out <- select(field_asv_models, asv_id, tp_contrasts) %>%
   unnest(tp_contrasts) %>%
+  group_by(year, season) %>%
+  mutate(fdr = p.adjust(p.value, 'fdr')) %>% 
+  ungroup %>%
   mutate(estimate = str_c(round(estimate, 1), round(SE, 2), sep = '+-'),
-         # p.value = p.adjust(p.value, 'fdr'),
-         estimate = if_else(p.value < 0.05, str_c(estimate, ' *'), estimate),
+         estimate = if_else(fdr < 0.05, str_c(estimate, ' *'), estimate),
          .keep = 'unused') %>%
   select(-df, -t.ratio, -contains('p.value')) %>%
   pivot_wider(names_from = c(year, season),
@@ -56,70 +60,54 @@ field_out <- select(field_asv_models, asv_id, pct_site, tp_contrasts) %>%
   select(-contrast)
 
 
-tank_asv_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>% 
-  filter(asv_id %in% ml_model_out$asv_id) 
 
-
-tank_mid <- tank_asv_models %>%
-  # filter(!asv_id %in% c('ASV700', 'ASV15', 'ASV49')) %>%
-  rowwise(asv_id) %>%
-  reframe(summary(model)$varcor %>%
-            as_tibble() %>%
-            mutate(pct_var = vcov / sum(vcov)) %>%
-            select(grp, pct_var) %>%
-            pivot_wider(names_from = 'grp', 
-                        values_from = 'pct_var') %>%
-            select(-Residual) %>%
-            rename_with(~str_c('pct_', .)),
-          
-          emmeans(model, ~health | (exp_dis + exp_hea)) %>%
-            contrast('revpairwise') %>%
-            broom::tidy(conf.int = TRUE) %>%
-            filter(!(exp_dis == 1 & exp_hea == 1)) %>%
-            mutate(time = if_else(exp_dis == 0 & exp_hea == 0, 'Before', 'After'),
-                   dose = case_when(exp_dis == 1 ~ 'Disease',
-                                    exp_hea == 1 ~ 'Healthy',
-                                    TRUE ~ NA_character_)) %>%
-            select(time, dose, estimate, std.error, p.value)) 
-
-
-
-
-tank_out <- tank_mid %>%
-  
-  # filter(asv_id %in% c('ASV8', 'ASV30'))
-  
-  mutate(treatment = str_c(time, str_replace_na(dose, ''), sep = '_') %>% str_remove('_$'),
-         
-         estimate = str_c(round(estimate, 1), round(std.error, 2), sep = '+-'),
-         # p.value = p.adjust(p.value, 'fdr'),
-         estimate = if_else(p.value < 0.05, str_c(estimate, ' *'), estimate),
-         
+tank_out <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>% 
+  filter(asv_id %in% ml_model_out$asv_id) %>%
+  inner_join(mutate(field_asv_models, across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
+               filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
+               select(asv_id),
+             by = 'asv_id') %>%
+  select(asv_id, tank_posthoc) %>%
+  unnest(tank_posthoc) %>%
+  group_by(contrast) %>%
+  mutate(fdr = p.adjust(p.value, 'fdr')) %>% 
+  ungroup %>%
+  mutate(estimate = str_c(round(estimate, 1), round(std.error, 2), sep = '+-'),
+         estimate = if_else(fdr < 0.05, str_c(estimate, ' *'), estimate),
          .keep = 'unused') %>%
-  select(-contains('p.value')) %>%
-  pivot_wider(names_from = treatment, values_from = estimate)
+  select(asv_id, contrast, estimate) %>%
+  pivot_wider(names_from = c(contrast),
+              values_from = estimate) %>%
+  mutate(likely_type = case_when(str_detect(DDvDH, '\\*') & 
+                                   str_detect(DvH, '\\*') & 
+                                   str_detect(PostvPreD, '\\*') ~ 'Pathogen',
+                                 
+                                 str_detect(DvN, '\\*') & 
+                                   str_detect(PostvPreD, '\\*') ~ 'Opportunist',
+                        
+                        TRUE ~ 'Commensalist'))
 
 
-
-asv_table <- full_join(ml_model_out,
-                       field_out,
-                       by = 'asv_id') %>%
+asv_table <- select(ml_model_out, phylum:genus, 
+                    asv_id, median_rank, FDR) %>%
+  full_join(field_out,
+            by = 'asv_id') %>%
+  relocate(`2016_W`, .before = `2016_S`) %>%
+  relocate(`2017_W`, .before = `2017_S`) %>%
   left_join(tank_out,
             by = 'asv_id') %>%
-  mutate(across(starts_with('pct'), ~scales::percent(., 1))) %>%
-  select(-statistic, -p.value,
-         -phylum:-order) %>%
   relocate(`2016_W`, .before = `2016_S`) %>%
   relocate(`2017_W`, .before = `2017_S`) %>%
   rename(Family = family,
          Genus = genus,
          ID = asv_id) %>%
   mutate(across(where(is.character), ~str_replace_all(., '\\+-', ' ± '))) %>%
-  select(-starts_with('pct')) %>%
-  select(-MLP:-`Random Forest`) %>%
-  rename('Median Rank' = median_rank)
+  rename('Median Rank' = median_rank) %>%
+  relocate(`PostvPreD`, .after = `2017_S`) %>%
+  relocate(`PostvPreH`, .after = `2017_S`) %>%
+  relocate(`DvN`, .after = `PostvPreD`) 
 
-write_csv(asv_table, '../../Results/Table2_asv_table.csv')  
+write_csv(asv_table, '../../Results/Table4_asv_table.csv')  
 
 
 

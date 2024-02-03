@@ -5,6 +5,7 @@ library(lubridate)
 library(lmerTest)
 library(emmeans)
 library(patchwork)
+library(ggtext)
 
 #### Data ####
 prevelance_data <- read_csv('C:/Users/jdsel/Dropbox/1_AC_field_abundprev/Acer5sites_HS_Added.csv', 
@@ -99,7 +100,9 @@ model_data <- prevelance_data %>%
             n_wbd = sum(wbd),
             total_meters = n(),
             date = median(date),
-            .groups = 'drop')
+            .groups = 'drop') %>%
+  left_join(bocas_temp,
+            by = c('date'))
 
 #### Analysis of Acerv Density ####
 acerv_model_random <-  glmer(cbind(n_acerv, total_meters - n_acerv) ~ 
@@ -155,12 +158,6 @@ add_grouping(model_grid_acer, 'low_high', 'timepoint',
              factor(c('high', 'other', 'low', 'low', 'low'))) %>%
   emmeans(~low_high, type = 'response')
 
-
-add_grouping(model_grid_random, 'season', 'timepoint', 
-             factor(c('S', 'W', 'S', 'W', 'S'))) %>%
-  emmeans(~season) %>%
-  contrast('pairwise')
-
 #### WBD Analysis ####
 full_model_random <-  glmer(cbind(n_wbd, n_acerv - n_wbd) ~ 
                               timepoint + (1 | site), 
@@ -169,6 +166,20 @@ full_model_random <-  glmer(cbind(n_wbd, n_acerv - n_wbd) ~
 
 car::Anova(full_model_random, method = 'LRT')
 summary(full_model_random)
+
+## Significance of site
+no_site_model <- glmmTMB(cbind(n_wbd, n_acerv - n_wbd) ~ 
+                           timepoint, 
+                         family = 'binomial',
+                         data = model_data)
+
+full_model_random <-  glmmTMB(cbind(n_wbd, n_acerv - n_wbd) ~ 
+                                timepoint + (1 | site), 
+                              family = 'binomial',
+                              data = model_data)
+
+anova(no_site_model, full_model_random)
+##
 
 significance_groupings <- glht(full_model_random, 
                                linfct = mcp(timepoint = "Tukey")) %>%
@@ -245,8 +256,19 @@ add_grouping(model_grid_random, 'year', 'timepoint',
              factor(c('2015', '2016', '2016', '2017', '2017'))) %>%
   emmeans(~year, type = 'response')
 
+
 #### Make Merged Plot ####
-(temp_plot + theme(axis.text.x = element_blank())) / 
-  (dhw_plot + theme(axis.text.x = element_blank())) /
-  (abundance_plot + theme(axis.text.x = element_blank())) / 
-  prevelance_plot
+(temp_plot + labs(y = 'Mean Daily Temperature (°C)') + 
+   theme(axis.text.x = element_blank())) / 
+  # (dhw_plot + theme(axis.text.x = element_blank())) /
+  (prevelance_plot + labs(y = 'WBD Prevelance (%)') + 
+     theme(axis.text.x = element_blank(),
+           axis.title.y = element_markdown())) / 
+  (abundance_plot + labs(y = '<i>A. cervicornis</i> Abundance (%)') +
+     theme(axis.text.x = element_text(size = 12))) &
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(face = 'bold', size = 16),
+        axis.title = element_text(size = 12),
+        axis.text.y = element_text(size = 10, 
+                                   colour = 'black')) 
+ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 5)

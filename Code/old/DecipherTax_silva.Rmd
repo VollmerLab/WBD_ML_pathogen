@@ -1,0 +1,136 @@
+---
+title: "16s_Dechiper"
+author: "Steve Vollmer"
+date: "3/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(Biostrings)
+library(tidyr)
+library(purrr)
+library(dplyr)
+library(metagMisc)
+library(kableExtra)
+library(reshape2)
+library(stringr)
+library(tidyverse)
+library(phyloseq)
+library(magrittr)
+library(seqinr)
+library(ggpubr)
+```
+
+```{r}
+ps <- readRDS("field_tank_ps.rds")
+ps
+```
+
+
+```{r}
+sequences <- Biostrings::DNAStringSet(taxa_names(ps))
+names(sequences) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, sequences)
+ps
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+```
+
+```{r}
+asv <- t(otu_table(ps))
+asv_mtx <- t(as(otu_table(ps), "matrix"))
+otu <- as(otu_table(ps), "matrix")
+tax <- as(tax_table(ps), "matrix")
+tax_df <- as.data.frame(tax_table(ps))
+sampleData <- sample_data(ps)
+write.csv(tax_df, "original_taxonomy.csv")
+```
+
+```{r}
+Biostrings::writeXStringSet(file="asv.fas", refseq(ps))
+```
+
+```{r}
+# load the DECIPHER library in R
+library(DECIPHER)
+
+# specify the path to the FASTA file (in quotes)
+fas <- "asv.fas"
+
+# load the sequences from the file
+seqs <- readDNAStringSet(fas) # or readRNAStringSet
+
+# remove any gaps (if needed)
+seqs <- RemoveGaps(seqs)
+
+# load a training set object (trainingSet)
+# see http://DECIPHER.codes/Downloads.html
+load("SILVA_SSU_r138_2019.RData")
+
+# classify the sequences
+silva_ids <- IdTaxa(seqs,
+   trainingSet,
+   strand="both", # or "top" if same as trainingSet
+   threshold=50, # 60 (cautious) or 50 (sensible)
+   processors=NULL) # use all available processors
+```
+
+
+```{r}
+assignment <- sapply(silva_ids,
+function(x)
+paste(x$taxon,
+collapse=";"))
+head(assignment)
+```
+
+```{r}
+ranks <- c("domain", "phylum", "class", "order", "family", "genus", "species")
+silva_asv_tax <- t(sapply(silva_ids, function(x) {
+  m <- match(ranks, x$rank)
+  taxa <- x$taxon[m]
+  taxa[startsWith(taxa, "unclassified_")] <- NA
+  taxa
+}))
+colnames(silva_asv_tax) <- ranks
+#rownames(asv_tax) <- gsub(pattern=">", replacement="", x=asv_headers)
+write.csv(silva_asv_tax, "silva_taxonomy.csv")
+```
+
+```{r}
+og_tax_df <- as_tibble(tax)
+og_tax_sum <- og_tax_df %>%
+  group_by(Kingdom, Phylum) %>%
+  summarize(count = n())
+  #mutate(count = n())
+og_tax_sum
+```
+
+```{r}
+s_tax_df <- as_tibble(silva_asv_tax)
+s_tax_sum <- s_tax_df %>%
+  group_by(domain, phylum) %>%
+  summarize(count = n())
+  #mutate(count = n())
+s_tax_sum
+```
+
+```{r}
+ps_new <- ps
+ps_new
+
+otu_2 <- otu_table(ps_new)
+sam_2 <- sample_data(ps_new)
+tax_2 <- tax_table(silva_asv_tax)
+tre_2 <- phy_tree(ps_new)
+ref_2 <- refseq(ps_new)
+
+ps3 <- phyloseq(otu_table(otu_2), sample_data(sam_2), tax_table(tax_2), phy_tree(tre_2), refseq(ref_2))
+ps3
+saveRDS(ps3, file="field_tank_newPS_deciphersilva.rds")
+```
+

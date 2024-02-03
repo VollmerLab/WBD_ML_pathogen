@@ -16,7 +16,7 @@ maxZ <- 2
 
 # To run on Discovery 
 # sbatch \
-#   --dependency=afterany:39594917 \
+#   --dependency=afterany:40368753 \
 #   --output=/scratch/j.selwyn/Panama_Tank_Field/slurm/shap_%j.out \
 #   /work/vollmer/software/jds_scripts/runRscript.slurm \
 #   /scratch/j.selwyn/Panama_Tank_Field/Code/4-Model_Explainations.R
@@ -58,10 +58,8 @@ tank_data <- read_csv('../intermediate_files/normalized_tank_asv_counts.csv',
   filter(geno != 'GE', time == '8_exp',
          anti == 'N', health == 'D') %>%
   # mutate(sample_id = str_c(sample_id, time, sep = '_')) %>%
-  select(asv_id, sample_id, resist, log2_cpm_norm) %>%
-  rename(health = resist) %>%
-  mutate(health = str_replace_all(health, c('R' = 'H', 'S' = 'D')) %>% 
-           factor()) %>%
+  select(asv_id, sample_id, health, log2_cpm_norm) %>%
+  mutate(health = factor(health)) %>%
   pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
 
 model_predictions <- list.files('../Results/model_tuning/metrics/',
@@ -521,7 +519,8 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
   # filter(asv_rank <= MAX_ASV) %>%
   filter(asv_id %in% retain_asvs,
          wflow_id %in% models_use) %>%
-  mutate(higher_taxonomy = fct_reorder(higher_taxonomy, asv_rank)) %>% 
+  mutate(higher_taxonomy = str_c(higher_taxonomy, asv_id, sep = '; '),
+         higher_taxonomy = fct_reorder(higher_taxonomy, asv_rank)) %>% 
   rename(model = wflow_id) %>%
   
   ggplot(aes(x = model, y = shap_importance, 
@@ -530,7 +529,7 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
   
   
   
-  geom_bump() +
+  geom_bump(show.legend = FALSE) +
   geom_point() +
   
   # geom_text(data = . %>% filter(model == levels(model)[1]),
@@ -553,8 +552,9 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
        colour = NULL) +
   theme_classic() +
   theme(legend.position = 'bottom',
-        legend.direction = 'horizontal')
-ggsave('../Results/Fig4_shap_importance_bump.png', plot = shap_importance_bump, height = 7, width = 10)
+        legend.direction = 'horizontal',
+        legend.text = element_text(colour = 'black', size = 8))
+ggsave('../Results/Fig7_shap_importance_bump.png', plot = shap_importance_bump, height = 7, width = 11)
 
 #### SHAP Summary ####
 shap_summary_plot <- individual_shap_values %>% 

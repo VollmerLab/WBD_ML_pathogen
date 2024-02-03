@@ -10,7 +10,10 @@ library(ggvenn)
 library(ggupset)
 
 #### Tank samples to remove for double sequencing?? ####
-remove_samples <- c('Bin1_N_D_YE', 'Bin2_N_D_YE', 'Bin5_N_D_OR')
+#Definitely remove yellow - maybe remove green/orange
+#Yellow has 2 samples and should only have 1, green/orange should both have 1 and do but were diseased prior to first sampling
+# remove_samples <- c('Bin1_N_D_YE', 'Bin2_N_D_YE', 'Bin5_N_D_OR', 'Bin5_N_D_GR')
+remove_samples <- 'none'
 
 #### Functions ####
 # data <- otu_tmm
@@ -39,10 +42,17 @@ microbiome_data <- microbiome_raw %>%
                 order != "Chloroplast") %>%
   prune_samples(sample_sums(.) > 1000, .) %>%
   subset_samples(site != 'MG') %>% #no disease samples
-  prune_samples(!str_detect(rownames(sample_data(.)), str_c(remove_samples, collapse = '|')), .)
-                 
+  prune_samples(!str_detect(rownames(sample_data(.)), 
+                            str_c(remove_samples, collapse = '|')), .)
+                
 
+## Reclassify with Decipher 
+Biostrings::writeXStringSet(file="../intermediate_files/all_asvs.fasta", refseq(microbiome_data))
+#http://www2.decipher.codes/ClassifyOrganisms.html
 
+updated_taxonomy <- read_csv('../intermediate_files/update_taxonomy.csv', show_col_types = FALSE) %>% 
+  select(-ends_with('confidence'))
+tax_table(microbiome_data) <- column_to_rownames(updated_taxonomy, 'asv_id') %>% as.matrix
 
 metadata <- sample_data(microbiome_data) %>%
   as_tibble(rownames = 'sample_id') %>%
@@ -64,10 +74,13 @@ sequenced_tank_samples <- filter(metadata, dataset == 'tank') %>%
 #Post disease pic July 15
 
 
-
-# original_tank <- 
-read_csv('../Data/su17_tank_surv_data.csv', 
-                          show_col_types = FALSE) %>%
+original_tank <- read_csv('../Data/su17_tank_surv_data.csv', 
+         show_col_types = FALSE) %>%
+  mutate(fragment_id = str_c(str_c('Bin', Block), if_else(antibiotics == 'no_antibiotics', 'N', 'A'),
+                             if_else(exposure == 'healthy', 'N', 'D'), 
+                             str_sub(genotype, 1, 2) %>% str_to_upper(), sep = '_'),
+         .before = everything()) %>%
+  filter(fragment_id %in% sequenced_tank_samples) %>%
   filter(!genotype %in% c('Grey', 'Blue')) %>% #Did not sequence these genotypes for 16s
   rename_with(~str_replace_all(., c('21' = 'jul14am',	'30' = 'jul14pm',	
                                     '45' = 'jul15am',	'54' = 'jul15pm',	
@@ -76,40 +89,56 @@ read_csv('../Data/su17_tank_surv_data.csv',
                                     '117' = 'jul18am', '126' = 'jul18pm',	
                                     '141' = 'jul19am',	'150' = 'jul19pm',	
                                     '165' = 'jul20am',	'174' = 'jul20pm'))) %>%
+  
   pivot_longer(cols = starts_with('jul'),
                names_to = 'date',
                values_to = 'state') %>%
   
-  #Fix data entry errors
-  mutate(state = case_when(date == 'jul15am' & Block == 5 & 
-                             genotype == 'Green' & antibiotics == 'no_antibiotics' &
-                             exposure == 'disease' ~ 0,
-                           TRUE ~ state)) %>%
-  
   mutate(tank = str_c('Bin', Block),
          health = if_else(state == 0, 'H', 'D'),
          geno = str_sub(genotype, 1, 2) %>% str_to_upper(),
-         date = fct_inorder(date),
+         # date = fct_inorder(date),
          #no time 0_anti in this dataset - must keep the metadata from before - all are healthy
-         # time = case_when(date %in% c('jul15pm') ~ '2_exp',
-         #                  date %in% c('jul20pm') ~ '8_exp',
-         #                  TRUE ~ 'other'),
+         time = case_when(date %in% c('jul15pm') ~ '2_exp',
+                          date %in% c('jul20pm') ~ '8_exp',
+                          TRUE ~ 'other'),
          .keep = 'unused') %>%
-  # filter(time != 'other') %>%
-  
-  pivot_wider(names_from = date, values_from = health) %>%
-  mutate(fragment_id = str_c(tank, if_else(antibiotics == 'no_antibiotics', 'N', 'A'),
-                           if_else(exposure == 'healthy', 'N', 'D'), geno, sep = '_'),
-         .before = everything()) %>%
-  filter(fragment_id %in% sequenced_tank_samples) %>%
+  filter(time != 'other') %>%
   select(-Condition) %>%
-  filter(jul15am == 'D')
+  
+  mutate(plate = case_when(time == '2_exp' ~ 'P5',
+                           time == '8_exp' ~ 'P6',
+                           TRUE ~ NA_character_),
+         sample_id = str_c(plate, fragment_id, sep = '_'),
+         anti = if_else(antibiotics == 'no_antibiotics', 'N', 'A'),
+         exposure = if_else(exposure == 'healthy', 'N', 'D'),
+         anti_exposure = str_c(anti, exposure, sep = '_'),
+         site = 'tank', season = 'S', dataset = 'tank',
+         year = '2017') %>%
+  select(sample_id, health, time, tank, anti_exposure, anti,
+         exposure, geno, plate, year, season, site, dataset)
 
-metadata %>%
-  filter(str_detect(sample_id, 'Bin5_N_D_OR'))
+# sort(sequenced_tank_samples)
+# str_subset(sequenced_tank_samples, 'N_D') %>% sort
 
 #### Swap tank data to original tank data rather than post-processed data ####
+pre_exposure <- filter(metadata, dataset == 'tank') %>%
+  filter(time == '0_anti') %>%
+  select(-resist, -anti_health) %>%
+  mutate(exposure = 'pre')
 
+
+updated_tank_data <- filter(metadata, dataset == 'tank', time != '0_anti') %>%
+  select(-health, -resist, -anti_health) %>%
+  left_join(select(original_tank, sample_id, health, exposure),
+            by = 'sample_id') %>%
+  bind_rows(pre_exposure) %>%
+  mutate(tank = str_c(tank, anti, exposure, sep = '_'),
+         tank = str_remove(tank, '_pre'))
+
+metadata <- select(metadata, -resist, -anti_health) %>%
+  filter(dataset != 'tank') %>%
+  bind_rows(updated_tank_data)
 
 #### Summary Stats ####
 count(metadata, dataset, year, season)
@@ -120,14 +149,13 @@ count(metadata, dataset)
 
 filter(metadata, dataset == 'tank',
        anti != 'A') %>% 
-  count(tank, anti_health)
+  count(tank, anti, exposure)
 
 #### Sort out Experimental Design ####
-sample_data(microbiome_data) %>%
-  as_tibble(rownames = 'sample_id') %>%
+metadata %>%
   filter(dataset == 'tank') %>%
-  select(time, tank, geno, anti, health, anti_health, resist, sample_id) %>%
-  count(anti, health, anti_health, time)
+  select(time, tank, geno, anti, exposure, health, sample_id) %>%
+  count(anti, exposure, health, time)
 
 #### Split Field & Tank Metadata ####
 field_meta <- metadata %>% 
@@ -136,12 +164,15 @@ field_meta <- metadata %>%
 tank_meta <- metadata %>%
   filter(dataset == 'tank')
 
+str_subset(tank_meta$sample_id, 'GE')
+
 #### Check overlap btw tank & field across years ####
 sample_point_asvs <- phyloseq_filter_prevalence(microbiome_data, prev.trh = 0.1) %>%
   otu_table() %>%
   as.data.frame() %>%
   as_tibble(rownames = 'sample_id') %>%
-  mutate(sample_id = str_remove(sample_id, '^X')) %>%
+  mutate(sample_id = str_remove(sample_id, '^X'),
+         sample_id = str_replace(sample_id, 'GE', 'GR')) %>%
   left_join(metadata,
             by = 'sample_id') %>%
   mutate(across(starts_with('ASV'), ~. > 0)) %>%
@@ -158,7 +189,7 @@ sample_point_asvs <- phyloseq_filter_prevalence(microbiome_data, prev.trh = 0.1)
          .keep = 'unused') %>%
   group_by(asv_id) %>%
   summarise(n_sample_points = n_distinct(data_year_season),
-            sample_points = list(data_year_season)) 
+            sample_points = list(data_year_season))
 
 sample_point_asvs %>%
   ggplot(aes(x = sample_points)) +
@@ -251,13 +282,18 @@ filter(full_data, dataset == 'field') %>%
   janitor::remove_empty(which = 'cols') %>%
   write_csv('../intermediate_files/normalized_field_asv_counts.csv')
 
-filter(full_data, dataset == 'field') %>%
-  select(asv_id, sample_id, log2_cpm_norm, health) %>%
-  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm)
-
-
-  write_csv('../intermediate_files/normalized_field_asv_counts.csv')
+# filter(full_data, dataset == 'field') %>%
+#   select(asv_id, sample_id, log2_cpm_norm, health) %>%
+#   pivot_wider(names_from = asv_id, values_from = log2_cpm_norm) %>%
+# 
+#   write_csv('../intermediate_files/normalized_field_asv_counts.csv')
 
 filter(full_data, dataset == 'tank') %>%
   write_csv('../intermediate_files/normalized_tank_asv_counts.csv')
 
+
+
+sample_data(microbiome_data) <- column_to_rownames(metadata, 'sample_id')
+prepped_microbiome_data <- subset_samples(microbiome_data, is.na(anti) | anti == 'N')
+
+write_rds(prepped_microbiome_data, '../intermediate_files/prepped_microbiome.rds.gz')
