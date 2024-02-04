@@ -1,12 +1,14 @@
 
 library(tidyverse)
 library(emmeans)
+alpha <- 0.05
 
 taxonomy <- read_csv('../../intermediate_files/taxonomy.csv.gz', 
                      show_col_types = FALSE) %>%
   mutate(across(everything(), ~str_replace_na(., '')))
 
-read_csv('../../Results/ASV_oraGSEA.csv.gz')
+taxonom_confidence <- read_csv('../../intermediate_files/update_taxonomy.csv',
+         show_col_types = FALSE)
 
 
 ml_model_out <- read_csv('../../Results/asv_importance.csv.gz', show_col_types = FALSE) %>%
@@ -88,8 +90,12 @@ tank_out <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
                         TRUE ~ 'Commensalist'))
 
 
-asv_table <- select(ml_model_out, phylum:genus, 
+asv_table <- select(ml_model_out, phylum:species, 
                     asv_id, median_rank, FDR) %>%
+  relocate(`asv_id`, .after = `species`) %>%
+  left_join(select(taxonom_confidence, asv_id, ends_with('confidence')), 
+            by = 'asv_id') %>%
+  relocate(`asv_id`, median_rank, FDR, .after = `species_confidence`) %>%
   full_join(field_out,
             by = 'asv_id') %>%
   relocate(`2016_W`, .before = `2016_S`) %>%
@@ -100,6 +106,7 @@ asv_table <- select(ml_model_out, phylum:genus,
   relocate(`2017_W`, .before = `2017_S`) %>%
   rename(Family = family,
          Genus = genus,
+         Species = species,
          ID = asv_id) %>%
   mutate(across(where(is.character), ~str_replace_all(., '\\+-', ' ± '))) %>%
   rename('Median Rank' = median_rank) %>%
@@ -107,7 +114,7 @@ asv_table <- select(ml_model_out, phylum:genus,
   relocate(`PostvPreH`, .after = `2017_S`) %>%
   relocate(`DvN`, .after = `PostvPreD`) 
 
-write_csv(asv_table, '../../Results/Table4_asv_table.csv')  
+write_csv(asv_table, '../../Results/Table45_asv_table.csv')  
 
 
 
