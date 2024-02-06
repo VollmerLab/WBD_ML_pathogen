@@ -93,9 +93,20 @@ tank_out <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
 asv_table <- select(ml_model_out, phylum:species, 
                     asv_id, median_rank, FDR) %>%
   relocate(`asv_id`, .after = `species`) %>%
-  left_join(select(taxonom_confidence, asv_id, ends_with('confidence')), 
+  left_join(select(taxonom_confidence, asv_id, ends_with('confidence')) %>%
+              select(-domain_confidence), 
             by = 'asv_id') %>%
-  relocate(`asv_id`, median_rank, FDR, .after = `species_confidence`) %>%
+  
+  rename_with(~str_c(., '_name'), .cols = phylum:species) %>%
+  pivot_longer(cols = c(ends_with('name'), ends_with('confidence')),
+               names_to = c('taxon_level', '.value'),
+               names_pattern = '(.*)_(.*)') %>%
+  mutate(taxon_level = str_to_sentence(taxon_level),
+         name = str_c(name, ' (', scales::percent(confidence, scale = 1), ')'),
+         .keep = 'unused') %>%
+  pivot_wider(names_from = taxon_level, values_from = name) %>%
+  relocate(asv_id:FDR, .after = Species) %>%
+  
   full_join(field_out,
             by = 'asv_id') %>%
   relocate(`2016_W`, .before = `2016_S`) %>%
@@ -104,10 +115,7 @@ asv_table <- select(ml_model_out, phylum:species,
             by = 'asv_id') %>%
   relocate(`2016_W`, .before = `2016_S`) %>%
   relocate(`2017_W`, .before = `2017_S`) %>%
-  rename(Family = family,
-         Genus = genus,
-         Species = species,
-         ID = asv_id) %>%
+  rename(ID = asv_id) %>%
   mutate(across(where(is.character), ~str_replace_all(., '\\+-', ' ± '))) %>%
   rename('Median Rank' = median_rank) %>%
   relocate(`PostvPreD`, .after = `2017_S`) %>%

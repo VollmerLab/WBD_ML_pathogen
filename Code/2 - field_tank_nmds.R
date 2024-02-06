@@ -3,6 +3,7 @@ library(magrittr)
 library(patchwork)
 library(vegan)
 library(phyloseq)
+library(lubridate)
 
 #### Data ####
 field_data_cpm <- read_csv('../intermediate_files/normalized_field_asv_counts.csv', 
@@ -55,28 +56,34 @@ alpha_metric_analysis <- microbiome_data %>%
          inv_value = 1/value) %>%
   nest_by(metric)
 
+library(nlme)
 library(emmeans)
 source('~/R/R Functions/diagPlots.R')
 ## Richness ##
-richness_aov <- aov(value ~ health * timepoint * site, data = alpha_metric_analysis$data[[3]])
+richness_aov <- lme(value ~ health * timepoint, 
+                    random = ~1 | site,
+                    data = alpha_metric_analysis$data[[3]])
 diag.plots(richness_aov, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
 
 #Fix site/timepoint variance
-richness_gls <- gls(value ~ health * site * timepoint, data = alpha_metric_analysis$data[[3]],
+richness_gls <- lme(value ~ health * timepoint, 
+                    random = ~1 | site, 
+                    data = alpha_metric_analysis$data[[3]],
                     weights = varComb(varIdent(form = ~1|health), 
                                       varIdent(form = ~1|timepoint), 
                                       varIdent(form = ~1|site)))
 
 diag.plots(richness_gls, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
 
-lmerTest::lmer(value ~ health + (1 | site) + (1 | timepoint),
-     data = alpha_metric_analysis$data[[3]]) %>% anova(ddf = 'Kenward-Roger')
-
 ## Shannon ##
-shannon_aov <- aov(value ~ health * site * timepoint, data = alpha_metric_analysis$data[[2]])
+shannon_aov <- lme(value ~ health * timepoint, 
+                   random = ~1 | site, 
+                   data = alpha_metric_analysis$data[[2]])
 diag.plots(shannon_aov, col.nos = c(2:4), data = alpha_metric_analysis$data[[2]])
 
-shannon_gls <- gls(value ~ health * site * timepoint, data = alpha_metric_analysis$data[[2]],
+shannon_gls <- lme(value ~ health * timepoint, 
+                   random = ~1 | site, 
+                   data = alpha_metric_analysis$data[[2]],
                     weights = varComb(varIdent(form = ~1|health), 
                                       varIdent(form = ~1|timepoint), 
                                       varIdent(form = ~1|site)))
@@ -90,18 +97,15 @@ lmerTest::lmer(value ~ health + (1 | site) + (1 | timepoint),
 
 
 ## Simpson ##
-simpson_aov <- aov(value ~ health * timepoint * site, data = alpha_metric_analysis$data[[1]])
+simpson_aov <- lme(value ~ health * timepoint, 
+                   random = ~1 | site, 
+                   data = alpha_metric_analysis$data[[1]])
 diag.plots(simpson_aov, col.nos = c(2:4), data = alpha_metric_analysis$data[[1]])
 
-simpson_gls <- gls(value ~ health * site * timepoint, data = alpha_metric_analysis$data[[1]],
-                   weights = varComb(varIdent(form = ~1|health), 
-                                     varIdent(form = ~1|timepoint), 
-                                     varIdent(form = ~1|site)))
 
-diag.plots(simpson_gls, col.nos = c(2:4), data = alpha_metric_analysis$data[[1]])
-
-
-simpson_gls_log <- gls(log_value ~ health * timepoint * site, data = alpha_metric_analysis$data[[1]],
+simpson_gls_log <- lme(log_value ~ health * timepoint, 
+                       random = ~1 | site,
+                       data = alpha_metric_analysis$data[[1]],
                    weights = varComb(varIdent(form = ~1|health), 
                                      varIdent(form = ~1|timepoint), 
                                      varIdent(form = ~1|site)))
@@ -114,59 +118,71 @@ lmerTest::lmer(value ~ health * timepoint + (1 | site),
 bind_rows(
   richness = as_tibble(anova(richness_gls, type = 'marginal'), rownames = 'term'),
   shannon = as_tibble(anova(shannon_gls, type = 'marginal'), rownames = 'term'),
-  simpson = as_tibble(anova(simpson_gls, type = 'marginal'), rownames = 'term'),
+  simpson = as_tibble(anova(simpson_gls_log, type = 'marginal'), rownames = 'term'),
   .id = 'metric'
 ) %>%
   mutate(`F-value` = sprintf(`F-value`, fmt = '%#.3f'),
          `p-value` = scales::pvalue(`p-value`)) %>%
   write_csv('../Results/table2_alpha_diversity_anova.csv')
 
+
 significant_metrics <- bind_rows(
-  Richness = emmeans(richness_gls, ~health | timepoint * site) %>%
+  Richness = emmeans(richness_gls, ~health | timepoint) %>%
     contrast('pairwise') %>%
     as_tibble(),
   
-  Shannon = emmeans(shannon_gls, ~health | timepoint * site) %>%
+  Shannon = emmeans(shannon_gls, ~health | timepoint) %>%
     contrast('pairwise') %>%
     as_tibble(),
   
-  `Inverse Simpson` = emmeans(simpson_gls, ~health | timepoint * site) %>%
+  `Inverse Simpson` = emmeans(simpson_gls_log, ~health | timepoint) %>%
     contrast('pairwise') %>%
     as_tibble(),
   
   .id = 'metric'
 ) %>%
-  filter(metric != 'Richness',
-         p.value < 0.05) %>%
+  filter(p.value < 0.05) %>%
   mutate(timepoint = str_replace_all(timepoint, c('S' = 'July', 'W' = 'Jan')),
-         timepoint = str_replace_all(timepoint, '_', '\n')) %>%
-  select(metric, timepoint, site)
+         timepoint = str_replace_all(timepoint, '_', '-'),
+         timepoint = ymd(str_c(timepoint, '1', sep = '-'))) %>%
+  select(metric, timepoint)
+
+
+
 
 bind_rows(
-  Richness = emmeans(richness_gls, ~health | timepoint * site) %>%
+  Richness = emmeans(richness_gls, ~health | timepoint) %>%
     as_tibble(),
   
-  `Shannon` = emmeans(shannon_gls, ~health | timepoint * site) %>%
+  `Shannon` = emmeans(shannon_gls, ~health | timepoint) %>%
     as_tibble(),
   
-  `Inverse Simpson` = emmeans(simpson_gls, ~health | timepoint * site) %>%
-    as_tibble(),
+  `Inverse Simpson` = ref_grid(simpson_gls_log) %>%
+    update(tran = poisson(link = 'log')) %>%
+    emmeans(~health | timepoint, type = 'response') %>%
+    as_tibble() %>%
+    rename(emmean = response),
   
   .id = 'metric'
 ) %>%
   mutate(timepoint = str_replace_all(timepoint, c('S' = 'July', 'W' = 'Jan')),
-         timepoint = str_replace_all(timepoint, '_', '\n'),
+         timepoint = str_replace_all(timepoint, '_', '-'),
+         timepoint = ymd(str_c(timepoint, '1', sep = '-')),
          health = str_replace_all(health, c('D' = 'Diseased', 'H' = 'Healthy'))) %>%
-  ggplot(aes(x = site, y = emmean, ymin = lower.CL, ymax = upper.CL,
+  ggplot(aes(x = timepoint, y = emmean, ymin = lower.CL, ymax = upper.CL,
              colour = health)) +
-  geom_pointrange(position = position_dodge(0.5)) +
+  geom_pointrange(position = position_dodge2(50)) +
   geom_text(data = significant_metrics,
-            aes(x = site, y = Inf, label = '*'), 
+            aes(x = timepoint, y = Inf, label = '*'), 
             size = 10, inherit.aes = FALSE,
             vjust = 1) +
-  facet_grid(metric ~ timepoint, scales = 'free_y', 
+  # facet_wrap(~metric, scales = 'free_y')
+  scale_x_date(breaks = ymd(c('2016-01-01', '2016-07-01', 
+                              '2017-01-01', '2017-07-01')), 
+               date_labels = '%b\n%Y') +
+  facet_grid(metric ~ ., scales = 'free_y', 
              switch = 'y') +
-  labs(x = 'Site',
+  labs(x = NULL,
        y = NULL,
        colour = 'Health\nState') +
   theme_classic() +
@@ -179,7 +195,7 @@ bind_rows(
         # legend.position = c(0.9, 0.9),
         legend.title = element_text(colour = 'black', size = 14),
         legend.text = element_text(colour = 'black', size = 12))
-ggsave('../Results/Fig3_alpha_diversity.png', height = 10, width = 10)
+ggsave('../Results/Fig3_alpha_diversity.png', height = 7, width = 7)
 
 
 #### PERMANOVA ####
@@ -223,7 +239,7 @@ if(file.exists('../intermediate_files/field_tank_nmds.rds.gz')){
 if(file.exists('../intermediate_files/field_tank_asvArrows.rds.gz')){
   asv_fit <- read_rds('../intermediate_files/field_tank_asvArrows.rds.gz')
 } else {
-  asv_fit <- field_data %>%
+  asv_fit <- field_data_cpm %>%
     select(-sample_id) %>%
     envfit(the_nmds, env = .,
            permutations = 9999)
@@ -234,12 +250,6 @@ if(file.exists('../intermediate_files/field_tank_asvArrows.rds.gz')){
 #### Plot ####
 colony_points_nmds <- scores(the_nmds)$sites %>%
   as_tibble(rownames = 'sample_id') %>%
-  left_join(field_data %>%
-              select(sample_id, health),
-            by = 'sample_id') %>%
-  mutate(tank_field = if_else(str_detect(sample_id, 'Bin'),
-                              'tank', 'field')) %>%
-  # left_join(tank_metadata, by = 'sample_id') %>%
   left_join(field_metadata, by = 'sample_id')
 
 filter(colony_points_nmds, NMDS1 > 0.8)
@@ -253,6 +263,15 @@ health_plot <- colony_points_nmds %>%
   theme(legend.position = 'right',
         panel.background = element_rect(colour = 'black'))
 # ggsave('../Results/nmds_field_tank.png', height = 7, width = 7)
+
+colony_points_nmds %>% 
+  ggplot(aes(x = NMDS1, y = NMDS2)) +
+  geom_point(aes(colour = site)) +
+  facet_wrap(~timepoint) +
+  labs(colour = 'Site') +
+  theme_classic() +
+  theme(panel.background = element_rect(colour = 'black'))
+
 
 
 #### Figure out why ####

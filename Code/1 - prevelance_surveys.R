@@ -89,6 +89,27 @@ dhw_plot <- bocas_temp %>%
         axis.text = element_text(colour = 'black', size = 10),
         panel.background = element_rect(colour = 'black'))
 
+#### Cyclic Temperature Plot ####
+cyclical_temp_plot <- bocas_temp %>%
+  mutate(month = month(date),
+         year = year(date),
+         day = day(date)) %>%
+  filter(year != 2005) %>%
+  ggplot(aes(x = ymd(str_c('2000', month, day, sep = '-')), y = water_temp, group = year)) +
+  geom_hline(yintercept = 30, linetype = 'dashed') +
+  geom_line() +
+  # geom_vline(data = mutate(the_dates, fake_date = ymd(str_c('2000',  month(date),day(date),sep='-'))), 
+  #            aes(xintercept = fake_date)) +
+  # geom_vline(xintercept = ymd(c('2000-04-01', '2000-07-01')), colour = 'blue') +
+  # geom_vline(xintercept = ymd(c('2000-09-01', '2000-12-01')), colour = 'red') +
+  scale_x_date(date_labels = '%b') +
+  labs(x = NULL,
+       y = 'Mean Daily Temperature (°C)') +
+  theme_classic() +
+  theme(axis.title = element_text(colour = 'black', size = 14),
+        axis.text = element_text(colour = 'black', size = 10),
+        panel.background = element_rect(colour = 'black'))
+
 #### Map Raw Data ####
 count(prevelance_data, season, year, site) %>%
   pivot_wider(names_from = 'site',
@@ -104,11 +125,36 @@ model_data <- prevelance_data %>%
   left_join(bocas_temp,
             by = c('date'))
 
+#get days above 30 in preceeding heat wave (april-june or sept-nov) & max temp & number of days since peak
+model_data_2 <- bocas_temp %>%
+  mutate(month = month(date),
+         year = year(date),
+         day = day(date)) %>%
+  mutate(hw = case_when(month %in% c(4:6) ~ 'early',
+                        month %in% c(9:11) ~ 'late',
+                        TRUE ~ 'non')) %>%
+  group_by(year, hw) %>%
+  summarise(max_temp = max(water_temp),
+            mean_temp = mean(water_temp),
+            hot_day = sum(water_temp >= 30),
+            n_day = n(),
+            peak_date = date[water_temp == max_temp],
+            .groups = 'drop') %>%
+  filter(hw != 'non') %>%
+  mutate(year = if_else(hw == 'late', year + 1, year)) %>%
+  right_join(mutate(model_data, 
+                    hw = if_else(season == 'W', 'late', 'early'),
+                    year_f = year,
+                    year = as.numeric(as.character(year))),
+             by = c('year', 'hw')) %>%
+  mutate(days_since = as.numeric(date - peak_date),
+         timepoint = as.character(timepoint))
+
 #### Analysis of Acerv Density ####
 acerv_model_random <-  glmer(cbind(n_acerv, total_meters - n_acerv) ~ 
                               timepoint + (1 | site), 
                             family = 'binomial',
-                            data = model_data)
+                            data = model_data_2)
 car::Anova(acerv_model_random, method = 'LRT')
 summary(acerv_model_random)
 
@@ -143,7 +189,7 @@ abundance_plot <- emmeans(acerv_model_random, ~timepoint,
   scale_x_date(breaks = ymd(c('2015-01-01', '2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
-               date_labels = '%b %Y',
+               date_labels = '%b\n%Y',
                limits = ymd(c('2015-01-01', '2017-08-01'))) +
   labs(x = NULL, 
        y = 'Acropora cervicornis prevelance (%)') +
@@ -159,10 +205,10 @@ add_grouping(model_grid_acer, 'low_high', 'timepoint',
   emmeans(~low_high, type = 'response')
 
 #### WBD Analysis ####
-full_model_random <-  glmer(cbind(n_wbd, n_acerv - n_wbd) ~ 
+full_model_random <-  glmmTMB(cbind(n_wbd, n_acerv - n_wbd) ~ 
                               timepoint + (1 | site), 
                             family = 'binomial',
-                            data = model_data)
+                            data = model_data_2)
 
 car::Anova(full_model_random, method = 'LRT')
 summary(full_model_random)
@@ -212,7 +258,7 @@ prevelance_plot <- emmeans(full_model_random, ~timepoint,
   scale_x_date(breaks = ymd(c('2015-01-01', '2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
-               date_labels = '%b %Y',
+               date_labels = '%b\n%Y',
                limits = ymd(c('2015-01-01', '2017-08-01'))) +
   labs(x = NULL, 
        y = 'White Band Disease Prevelance (%)') +
@@ -257,18 +303,104 @@ add_grouping(model_grid_random, 'year', 'timepoint',
   emmeans(~year, type = 'response')
 
 
+#### Associations with Temperature/WBD ####
+library(nlme)
+#model <- temp_association$model[[1]]
+process_gls <- function(model){
+  tst <- anova(model)
+  as_tibble(tst, rownames = 'effect') %>%
+    filter(effect == 'temp_metric') %>%
+    select(-effect) %>%
+    mutate(denDF = str_extract(attr(tst, 'label'), '[0-9]([0-9\\.]+)?') %>% 
+             as.numeric(),
+           .after = numDF) %>%
+    janitor::clean_names()
+}
+
+temp_association <- emmeans(full_model_random, ~timepoint, 
+                            type = 'link') %>%
+  as_tibble() %>%
+  left_join(select(model_data_2,  timepoint, hot_day, max_temp, mean_temp) %>%
+              distinct,
+            by = 'timepoint') %>%
+  mutate(var = SE^2) %>%
+  pivot_longer(cols = c(hot_day, max_temp, mean_temp),
+               names_to = 'metric',
+               values_to = 'temp_metric') %>%
+  nest_by(metric) %>%
+  mutate(model = list(gls(emmean ~ temp_metric, 
+                          weight=varIdent(var), 
+                          data = data)),
+         process_gls(model))
+
+temp_association
+
+temp_wbd_plot <- ref_grid(temp_association$model[[1]], at = list(temp_metric = seq(0, 90, length.out = 50)),
+         data = temp_association$data[[1]]) %>%
+  update(tran = binomial(link = 'logit')) %>%
+  emmeans(~temp_metric, 
+          type = 'response') %>%
+  as_tibble() %>%
+  rename(hot_day = temp_metric) %>%
+  ggplot(aes(x = hot_day, y = response, ymin = lower.CL, ymax = upper.CL)) +
+  geom_ribbon(alpha = 0.5) +
+  geom_pointrange(data = emmeans(full_model_random, ~timepoint, 
+                                 type = 'response') %>%
+                    as_tibble() %>%
+                    left_join(select(model_data_2,  timepoint, hot_day) %>%
+                                distinct,
+                              by = 'timepoint'),
+                  inherit.aes = FALSE,
+                  aes(x = hot_day, y = prob, ymin = asymp.LCL, ymax = asymp.UCL)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  labs(x = 'Days ≥ 30°C', 
+       y = 'White Band Disease Prevelance (%)') +
+  theme_classic() +
+  theme(axis.title = element_text(colour = 'black', size = 14),
+        axis.text = element_text(colour = 'black', size = 10),
+        panel.background = element_rect(colour = 'black'))
+
+
+
 #### Make Merged Plot ####
+
+
 (temp_plot + labs(y = 'Mean Daily Temperature (°C)') + 
    theme(axis.text.x = element_blank())) / 
   # (dhw_plot + theme(axis.text.x = element_blank())) /
   (prevelance_plot + labs(y = 'WBD Prevelance (%)') + 
-     theme(axis.text.x = element_blank(),
-           axis.title.y = element_markdown())) / 
+     theme(axis.text.x = element_blank())) / 
   (abundance_plot + labs(y = '<i>A. cervicornis</i> Abundance (%)') +
-     theme(axis.text.x = element_text(size = 12))) &
+     theme(axis.text.x = element_text(size = 12),
+           axis.title.y = element_markdown())) &
   plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = 'bold', size = 16),
         axis.title = element_text(size = 12),
         axis.text.y = element_text(size = 10, 
                                    colour = 'black')) 
-ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 5)
+# ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 5)
+
+
+
+
+
+(((temp_plot + labs(y = 'Mean Daily Temperature (°C)') + 
+    theme(axis.text.x = element_blank())) / 
+  # (dhw_plot + theme(axis.text.x = element_blank())) /
+  (prevelance_plot + labs(y = 'WBD Prevelance (%)') + 
+     theme(axis.text.x = element_blank())) / 
+  (abundance_plot + labs(y = '<i>A. cervicornis</i> Abundance (%)') +
+     theme(axis.text.x = element_text(size = 12),
+           axis.title.y = element_markdown()))) | 
+  ((cyclical_temp_plot +
+      theme(axis.text.x = element_text(size = 12))) /
+     (temp_wbd_plot + labs(y = 'WBD Prevelance (%)') +
+        theme(axis.text.x = element_text(size = 12))))) &
+  
+  plot_annotation(tag_levels = list(c('A', 'C', 'D', 'B', 'E'))) &
+  theme(plot.tag = element_text(face = 'bold', size = 16),
+        axis.title = element_text(size = 12),
+        axis.text.y = element_text(size = 10, 
+                                   colour = 'black')) 
+ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 7)

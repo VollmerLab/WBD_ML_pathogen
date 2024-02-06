@@ -56,8 +56,8 @@ tank_asv_data <- read_csv('../intermediate_files/normalized_tank_asv_counts.csv'
          treatment = if_else(exposure == 'pre', 'pre',
                              str_c(exposure, health, sep = '_')),
          time_treat = str_c(time, exposure, health, sep = '_')) %>%
-  select(-dataset, -anti, -plate, -year:-site, -cpm_norm:-n_reads, 
-         -lib.size, -norm.factors, -domain:-species) %>%
+  select(-dataset, -anti, -plate, -year:-site, -cpm_norm:-cpm, 
+         -norm.factors, -domain:-species) %>%
   
   #Get rid of samples which shouldnt exist
   filter(!(str_detect(sample_id, str_c(whacky, collapse = '|')) & time == 8))
@@ -308,7 +308,7 @@ the_taxa_complete %>%
   nest_by(asv_id) %>%
   reframe(recursive_vote(data, c('phylum', 'class', 'order', 'family', 'genus', 'species'))) %>% 
   mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  arrange(asv_id)
+  arrange(asv_id) %>% View
 
 filter(the_taxa_complete, asv_id == 'ASV25') %>%
   mutate(holistic = holistic_metric_function(evalue, identity, bit.score, alignment.length, c(-5, 3, 4, 2))) %>%
@@ -528,7 +528,7 @@ if(file.exists('../intermediate_files/field_asv_models.rds.gz') & !rerun_models)
 } else {
   field_asv_models <- field_data %>%
     mutate(year = as.character(year)) %>%
-    select(asv_id, sample_id, health, year, season, site, log2_cpm_norm) %>%
+    select(asv_id, sample_id, health, year, season, site, log2_cpm_norm, n_reads, lib.size) %>%
     nest(data = -c(asv_id)) %>%
     # filter(asv_id == 'ASV25') %>%
     rowwise %>%
@@ -755,6 +755,126 @@ ggsave('../Results/Fig8_important_asvs.png', height = 15, width = 15)
 
 classified_plots +
   plot_annotation(tag_levels = list('A', c(NULL)))
+
+
+#### P/A % plots ####
+raw_pa_data <- tank_asv_models %>%
+  filter(asv_id %in% shap_importance$asv_id) %>%
+  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
+  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
+  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
+  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
+  # filter_at(vars(contains('pvalue_')), any_vars(. < alpha)) %>%
+  
+  mutate(likely_type = case_when(pvalue_DDvDH < alpha & 
+                                   #pvalue_DDvNH < alpha & 
+                                   pvalue_DvH < alpha &
+                                   pvalue_PostvPreD < alpha ~ 'Pathogen',
+                                 
+                                 pvalue_DvN < alpha &
+                                   pvalue_PostvPreD < alpha ~ 'Opportunist',
+                                 
+                                 TRUE ~ 'Commensalist'),
+         likely_type = factor(likely_type, levels = c('Pathogen', 'Opportunist', 'Commensalist')),
+         asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
+  arrange(asv_id) %>%
+  
+  # select(asv_id, starts_with('pvalue'), likely_type)
+  
+  left_join(taxonomy, by = 'asv_id') %>%
+  select(asv_id, domain:species, likely_type, data) %>%
+  rename(tank_data = data) %>%
+  left_join(select(field_asv_models, asv_id, data) %>%
+              rename(field_data = data),
+            by = 'asv_id') %>%
+  rowwise(asv_id:likely_type) %>%
+  mutate(field_data = list(mutate(field_data, treatment = str_c(health, year, season, sep = '_')) %>%
+                             select(sample_id, n_reads, treatment)),
+         tank_data = list(select(tank_data, sample_id, n_reads, treatment))) %>%
+  
+  reframe(bind_rows(tank_data, field_data)) %>%
+  group_by(across(c(asv_id:likely_type, treatment))) %>%
+  summarise(n_present = sum(n_reads > 0),
+            n_missing = sum(n_reads == 0),
+            total = n(),
+            .groups = 'rowwise') %>% 
+  reframe(broom::tidy(binom.test(x = n_present, n = total))) %>%
+  mutate(health = case_when(str_detect(treatment, '201[67]') ~ str_extract(treatment, '[HD]'),
+                            treatment == 'D_D' ~ 'D',
+                            TRUE ~ 'H'),
+         x_val = case_when(str_detect(treatment, '201[67]') ~ 'Field',
+                           str_detect(treatment, '[Pp]re') ~ 'Pre',
+                           TRUE ~ 'Post'),
+         x_val = factor(x_val, levels = c('Field', 'Pre', 'Post')),
+         exposure = case_when(x_val %in% c('Field', 'Pre') ~ 'none',
+                              treatment == 'N_H' ~ 'H',
+                              TRUE ~ 'D'))
+
+raw_pa_data %>%
+  mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
+  ggplot(aes(x = x_val, y = estimate, ymin = conf.low, ymax = conf.high,
+             colour = health, group = treatment, shape = exposure)) +
+  geom_pointrange(position = position_dodge(0.5)) +
+  facet_wrap(likely_type~asv_id)
+ggsave('../Results/percent_presence_important_asvs.png', height = 15, width = 15)
+
+#### Potential pathogens which samples are missing them ####
+the_pathogens <- tank_asv_models %>%
+  filter(asv_id %in% shap_importance$asv_id) %>%
+  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
+  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
+  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
+  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
+  # filter_at(vars(contains('pvalue_')), any_vars(. < alpha)) %>%
+  
+  mutate(likely_type = case_when(pvalue_DDvDH < alpha & 
+                                   #pvalue_DDvNH < alpha & 
+                                   pvalue_DvH < alpha &
+                                   pvalue_PostvPreD < alpha ~ 'Pathogen',
+                                 
+                                 pvalue_DvN < alpha &
+                                   pvalue_PostvPreD < alpha ~ 'Opportunist',
+                                 
+                                 TRUE ~ 'Commensalist'),
+         likely_type = factor(likely_type, levels = c('Pathogen', 'Opportunist', 'Commensalist')),
+         asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
+  arrange(asv_id) %>%
+  
+  # select(asv_id, starts_with('pvalue'), likely_type)
+  
+  left_join(taxonomy, by = 'asv_id') %>%
+  select(asv_id, domain:species, likely_type, data) %>%
+  rename(tank_data = data) %>%
+  left_join(select(field_asv_models, asv_id, data) %>%
+              rename(field_data = data),
+            by = 'asv_id') %>%
+  rowwise(asv_id:likely_type) %>%
+  mutate(field_data = list(mutate(field_data, treatment = str_c(health, year, season, sep = '_')) %>%
+                             select(sample_id, n_reads, lib.size, treatment)),
+         tank_data = list(select(tank_data, sample_id, n_reads, lib.size, treatment))) %>%
+  
+  reframe(bind_rows(tank_data, field_data)) %>% #lib.size
+  mutate(health = case_when(str_detect(treatment, '201[67]') ~ str_extract(treatment, '[HD]'),
+                            treatment == 'D_D' ~ 'D',
+                            TRUE ~ 'H')) %>%
+  filter(health == 'D',
+         likely_type == 'Pathogen')
+
+the_pathogens %>%
+  filter(asv_id == 'ASV25') %>%
+  glmer(as.integer(n_reads > 0) ~ scale(lib.size) + (1 | treatment), data = .,
+      family = binomial(link = 'logit')) %>%
+  emmeans(~lib.size, at = list(lib.size = seq(0, 3000, length.out = 1000)),
+          type = 'response') %>%
+  as_tibble() %>%
+  ggplot(aes(x = lib.size, y = response)) +
+  geom_line()
+  
+  
+  car::Anova()
+  ggplot(aes(x = lib.size, y = as.integer(n_reads > 0), colour = treatment)) +
+  # stat_summary_bin(bins = 100)
+  geom_point()
 
 #### Output asv coefficients ####
 asv_coef <- full_join(select(field_asv_models, asv_id, starts_with('mu'), starts_with('fcDH')),

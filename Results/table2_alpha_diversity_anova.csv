@@ -1,0 +1,13 @@
+metric,term,numDF,denDF,F-value,p-value
+richness,(Intercept),1,401,81.701,<0.001
+richness,health,1,401,4.787,0.029
+richness,timepoint,3,401,13.347,<0.001
+richness,health:timepoint,3,401,3.432,0.017
+shannon,(Intercept),1,401,104.070,<0.001
+shannon,health,1,401,1.477,0.225
+shannon,timepoint,3,401,1.792,0.148
+shannon,health:timepoint,3,401,0.503,0.681
+simpson,(Intercept),1,401,120.518,<0.001
+simpson,health,1,401,0.001,0.975
+simpson,timepoint,3,401,0.381,0.767
+simpson,health:timepoint,3,401,0.375,0.771
