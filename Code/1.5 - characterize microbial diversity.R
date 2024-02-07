@@ -114,8 +114,9 @@ microbial_diversity <- microbiome_data %>%
   subset_taxa(rownames(tax_table(microbiome_data)) %in% unique_asvs) %>%
   make_microbe_plot(grouping_levels = c('dataset', 'year', 'season', 'health'),
                     highest_taxon = 'order', lower_taxon = 'genus',
-                    # top_choices = rev(c('Verrucomicrobiales', 'Alteromonadales', 
-                    #                     'Vibrionales', 'Campylobacterales', 'Oceanospirillales')),
+                    top_choices = rev(c('Vibrionales', 'Thiotrichales',
+                                        'Alteromonadales', 'Rhodobacterales', 
+                                        'Oceanospirillales')),
                     legend_key_size = 1, legend_text_size = 14) 
 microbial_diversity$plot
 ggsave('../Results/Fig2_microbial_diversity.png', height = 10, width = 10, bg = 'white')

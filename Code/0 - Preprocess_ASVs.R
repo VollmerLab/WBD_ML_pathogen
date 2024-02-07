@@ -50,8 +50,17 @@ microbiome_data <- microbiome_raw %>%
 Biostrings::writeXStringSet(file="../intermediate_files/all_asvs.fasta", refseq(microbiome_data))
 #http://www2.decipher.codes/ClassifyOrganisms.html
 
-updated_taxonomy <- read_csv('../intermediate_files/update_taxonomy.csv', show_col_types = FALSE) %>% 
+new_taxonomy <- read_csv('../intermediate_files/update_taxonomy.csv', show_col_types = FALSE) %>% 
   select(-ends_with('confidence'))
+old_taxonomy <- tax_table(microbiome_data) %>%
+  as.data.frame %>%
+  as_tibble(rownames = 'asv_id')
+
+updated_taxonomy <- filter(new_taxonomy, is.na(species)) %>%
+  select(-domain:-species) %>%
+  left_join(old_taxonomy, by = 'asv_id') %>%
+  bind_rows(filter(new_taxonomy, !is.na(species)))
+
 tax_table(microbiome_data) <- column_to_rownames(updated_taxonomy, 'asv_id') %>% as.matrix
 
 metadata <- sample_data(microbiome_data) %>%

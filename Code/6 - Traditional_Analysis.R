@@ -30,6 +30,23 @@ field_data <- read_csv('../intermediate_files/normalized_field_asv_counts.csv',
          across(domain:genus, str_replace_na)) %>%
   nest_by(across(c(domain:genus, asv_id)))
 
+shap_importance <- read_csv('../Results/asv_importance.csv.gz',
+                            show_col_types = FALSE) %>%
+  filter(p_adjust < alpha) %>%
+  mutate(asv_id = fct_reorder(asv_id, median_rank)) %>%
+  select(asv_id, median_rank) %>%
+  distinct %>%
+  arrange(asv_id)
+
+ml_classifications <- read_csv('../Results/Table45_asv_table_supplement.csv',
+         show_col_types = FALSE) %>%
+  select(ID, likely_type) %>%
+  mutate(type = case_when(is.na(likely_type) ~ "ML ID'd",
+                          likely_type == 'Commensalist' ~ 'Field Consistent',
+                          TRUE ~ likely_type)) %>%
+  select(-likely_type) %>%
+  rename(asv_id = ID)
+
 #### All Random Model ####
 random_models <- field_data %>%
   partition(cluster) %>%
@@ -144,7 +161,9 @@ fixed_models <- field_data %>%
            as_tibble(rownames = 'term') %>%
            select(term, `Pr(>F)`) %>%
            pivot_wider(names_from = term, values_from = `Pr(>F)`) %>%
-           rename_with(~str_replace_all(., ':', 'X'))) %>%
+           rename_with(~str_replace_all(., ':', 'X')),
+         
+         up_disease = fixef(model)[['healthH']] < 0) %>%
   collect %>%
   ungroup
 
@@ -153,7 +172,6 @@ fixed_models <- field_data %>%
 colour_options <- read_rds('../intermediate_files/asv_colors.rds')
 microbe_colors <- set_names(colour_options$color_palette$hex,
           colour_options$color_palette$group)
-
 levels(colour_options$asv_clumping$Top_order)
 
 base_plot <- select(fixed_models, -where(is.list)) %>%
@@ -163,21 +181,41 @@ base_plot <- select(fixed_models, -where(is.list)) %>%
                            is.na(group) & order == 'Oceanospirillales' ~ 'Oceanospirillales-Other',
                            is.na(group) & order == 'Rhodobacterales' ~ 'Rhodobacterales-Other',
                            is.na(group) & order == 'Alteromonadales' ~ 'Alteromonadales-Other',
-                           is.na(group) & order == 'Flavobacteriales' ~ 'Flavobacteriales-Other',
-                           is.na(group) & order == 'Cellvibrionales' ~ 'Cellvibrionales-Other',
+                           is.na(group) & order == 'Thiotrichales' ~ 'Thiotrichales-Other',
+                           is.na(group) & order == 'Vibrionales' ~ 'Vibrionales-Other',
                            TRUE ~ 'Other-Other'),
          group = factor(group, levels = levels(colour_options$asv_clumping$group))) %>%
   # filter(!is.na(group)) %>%
   select(-Top_order, -Top_genus) %>%
   rename(the_colour = group) %>%
   mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
-         across(health:healthXtimepoint, ~. < alpha)) %>%
+         across(health:healthXtimepoint, ~. < alpha),
+         health_d = health & up_disease,
+         health_h = health & !up_disease) %>%
   rename('Health State' = health,
+         'Health State (Diseased)' = health_d,
+         'Health State (Healthy)' = health_h,
          'Sampling Time' = timepoint,
          'Health State x Sampling Time' = healthXtimepoint) %>%
+  select(-up_disease, -`Health State`) %>%
+  mutate(top_asv = if_else(asv_id %in% shap_importance$asv_id, 'yes', 'no')) %>%
+  # mutate(top_asv = case_when(asv_id %in% c('ASV25', 'ASV8', 'ASV38') ~ 'Pathogen',
+  #                            asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51') ~ 'Opportunist',
+  #                            TRUE ~ top_asv)) %>%
+  left_join(ml_classifications,
+            by = 'asv_id') %>%
   
   upset(data = ., 
         intersect = select(., where(is.logical)) %>% colnames,
+        base_annotations = list(
+          'Intersection size' = intersection_size(
+            counts = TRUE,
+            mapping = aes(fill = type)
+          ) + 
+            # scale_fill_manual(values = c('yes' = 'red', 'no' = '#595959', 
+            #                              'Pathogen' = 'orange', 'Opportunist' = 'green')) +
+            theme(legend.position = 'left')
+        ),
         annotations = list(
           'Order' = ggplot(mapping = aes(fill = the_colour)) +
             geom_bar(stat = 'count', position = 'fill', show.legend = FALSE) +

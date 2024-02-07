@@ -116,7 +116,8 @@ ggsave('../Results/nmds_important_asvs.png', height = 15, width = 15)
 
 #### Correlation Among Important ASVs ####
 sig_correlated_asvs <- field_data %>%
-  filter(asv_id %in% shap_importance$asv_id) %>%
+  filter(asv_id %in% shap_importance$asv_id,
+         health == 'D') %>%
   select(asv_id, sample_id, log2_cpm_norm) %>%
   full_join(., ., by = 'sample_id',
             relationship = "many-to-many") %>%
@@ -124,12 +125,67 @@ sig_correlated_asvs <- field_data %>%
   group_by(asv_id.x, asv_id.y) %>%
   summarise(broom::tidy(cor.test(log2_cpm_norm.x, log2_cpm_norm.y)),
             .groups = 'drop') %>%
-  mutate(p_adj = p.adjust(p.value, method = 'fdr')) %>%
+  mutate(p_adj = p.adjust(p.value, method = 'fdr')) 
+
+%>%
   filter(p_adj < alpha)
 
 sig_correlated_asvs %>%
   filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
   arrange(-estimate)
+
+
+sig_correlated_asvs %>%
+  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25')%>%
+  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8')
+
+
+field_data %>%
+  filter(asv_id %in% shap_importance$asv_id,
+         health == 'D') %>%
+  select(asv_id, sample_id, log2_cpm_norm) %>%
+  full_join(., ., by = 'sample_id',
+            relationship = "many-to-many") %>%
+  filter(asv_id.x > asv_id.y) %>%
+  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
+  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8') %>%
+  filter(log2_cpm_norm.y > min(log2_cpm_norm.y),
+         log2_cpm_norm.x > min(log2_cpm_norm.x)) %>%
+  summarise(broom::tidy(cor.test(log2_cpm_norm.x, log2_cpm_norm.y, method = 'spearman')),
+            .groups = 'drop') 
+  # 
+  # ggplot(aes(x = log2_cpm_norm.x, y = log2_cpm_norm.y)) +
+  # geom_point()
+
+
+field_data %>%
+  filter(asv_id %in% shap_importance$asv_id) %>%
+  select(asv_id, sample_id, log2_cpm_norm, health) %>%
+  full_join(., ., by = c('sample_id', 'health'),
+            relationship = "many-to-many") %>%
+  filter(asv_id.x > asv_id.y) %>%
+  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
+  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8') %>%
+  mutate(across(starts_with('log2'), ~. > min(.))) %>%
+  count(health, log2_cpm_norm.x, log2_cpm_norm.y) %>%
+  rename(ASV8 = log2_cpm_norm.x,
+         ASV25 = log2_cpm_norm.y) %>%
+  mutate(same_different = case_when(ASV8 & ASV25 ~ 'both',
+                                    !ASV8 & !ASV25 ~ 'neither',
+                                    ASV25 ~ 'only_ASV25',
+                                    ASV8 ~ 'only_ASV8')) %>%
+  group_by(health, same_different) %>%
+  summarise(n = sum(n), .groups = 'drop') %>%
+  pivot_wider(names_from = same_different,
+              values_from = 'n') %>%
+  relocate(neither, .after = only_ASV8) %>%
+  column_to_rownames('health') %>%
+  select(-both, -neither) %T>%
+  print %>%
+  chisq.test()
+#When only one or the other is present ASV25 is more associated with field samples with disease
+
+96/sum(c(96,16,28,3))
 
 #### Get sequences of ASVs and BLAST ####
 if(!file.exists('../intermediate_files/interesting_asv_16s.fasta')){

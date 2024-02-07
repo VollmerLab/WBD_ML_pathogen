@@ -53,16 +53,17 @@ bocas_temp <- read_csv('../Data/bocas_temp/bocas_tower_wt_elect.csv',
 #                    date_labels = '%b %Y') 
 
 temp_plot <- bocas_temp %>%
-  filter(date >= min(prevelance_data$date) - months(6),
-         date <= max(prevelance_data$date)) %>%
+  filter(date >= min(prevelance_data$date) - months(3),
+         date <= ymd('2017-08-01')) %>%
   # sample_n(500) %>%
   ggplot(aes(x = date, y = water_temp)) +
   geom_hline(yintercept = 30, linetype = 'dashed') +
   geom_path() +
-  scale_x_date(breaks = ymd(c('2015-01-01', '2015-07-01', 
+  scale_x_date(breaks = ymd(c('2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
-               date_labels = '%b %Y') +
+               date_labels = '%b %Y',
+               limits = ymd(c('2015-03-23', '2017-08-01'))) +
   labs(x = NULL, 
        y = 'Mean Daily Temperature (C)') +
   theme_classic() +
@@ -71,7 +72,7 @@ temp_plot <- bocas_temp %>%
         panel.background = element_rect(colour = 'black'))
 
 dhw_plot <- bocas_temp %>%
-  filter(date >= min(prevelance_data$date) - months(6),
+  filter(date >= min(prevelance_data$date) - months(3),
          date <= max(prevelance_data$date)) %>%
   # sample_n(500) %>%
   ggplot(aes(x = date, y = dhw)) +
@@ -186,11 +187,11 @@ abundance_plot <- emmeans(acerv_model_random, ~timepoint,
   geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
   geom_text(aes(y = Inf, label = .group), vjust = 1.5) +
   scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
-  scale_x_date(breaks = ymd(c('2015-01-01', '2015-07-01', 
+  scale_x_date(breaks = ymd(c('2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
                date_labels = '%b\n%Y',
-               limits = ymd(c('2015-01-01', '2017-08-01'))) +
+               limits = ymd(c('2015-03-23', '2017-08-01'))) +
   labs(x = NULL, 
        y = 'Acropora cervicornis prevelance (%)') +
   theme_classic() +
@@ -205,7 +206,7 @@ add_grouping(model_grid_acer, 'low_high', 'timepoint',
   emmeans(~low_high, type = 'response')
 
 #### WBD Analysis ####
-full_model_random <-  glmmTMB(cbind(n_wbd, n_acerv - n_wbd) ~ 
+full_model_random <-  glmer(cbind(n_wbd, n_acerv - n_wbd) ~ 
                               timepoint + (1 | site), 
                             family = 'binomial',
                             data = model_data_2)
@@ -259,7 +260,7 @@ prevelance_plot <- emmeans(full_model_random, ~timepoint,
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
                date_labels = '%b\n%Y',
-               limits = ymd(c('2015-01-01', '2017-08-01'))) +
+               limits = ymd(c('2015-03-23', '2017-08-01'))) +
   labs(x = NULL, 
        y = 'White Band Disease Prevelance (%)') +
   theme_classic() +

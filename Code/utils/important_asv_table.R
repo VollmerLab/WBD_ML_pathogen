@@ -43,11 +43,10 @@ field_asv_models <- read_rds('../../intermediate_files/field_asv_models.rds.gz')
            mutate(pct_var = vcov / sum(vcov)) %>%
            filter(grp == 'site') %>%
            pull(pct_var)) %>%
-  ungroup
+  ungroup 
 
-
-
-field_out <- select(field_asv_models, asv_id, tp_contrasts) %>%
+field_out <- field_asv_models %>%
+  select(asv_id, tp_contrasts) %>%
   unnest(tp_contrasts) %>%
   group_by(year, season) %>%
   mutate(fdr = p.adjust(p.value, 'fdr')) %>% 
@@ -62,6 +61,33 @@ field_out <- select(field_asv_models, asv_id, tp_contrasts) %>%
   select(-contrast)
 
 
+field_out2 <- read_rds('../../intermediate_files/field_asv_models.rds.gz') %>% 
+  filter(asv_id %in% ml_model_out$asv_id) %>%
+  rowwise %>%
+  select(asv_id, model, tp_contrasts) %>%
+  unnest(tp_contrasts) %>%
+  group_by(year, season) %>%
+  mutate(fdr = p.adjust(p.value, 'fdr')) %>%
+  select(-contrast, -df, -t.ratio, 
+         -contains('p.value'), -SE) %>%
+  ungroup %>%
+  group_by(asv_id) %>%
+  summarise(model = unique(model),
+            all_pos = all(estimate > 0),
+            all_neg = all(estimate < 0),
+            sig = all(fdr < alpha),
+            .groups = 'rowwise') %>%
+  
+  mutate(emmeans(model, ~health) %>%
+           contrast('pairwise') %>%
+           as_tibble() %>%
+           select(estimate, SE),
+         .keep = 'unused') %>%
+  ungroup %>%
+  mutate(estimate = str_c(round(estimate, 1), round(SE, 2), sep = '+-'),
+         estimate = if_else((sig & all_pos) | (sig & all_neg), 
+                            estimate, 'n/c'),
+         .keep = 'unused') 
 
 tank_out <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>% 
   filter(asv_id %in% ml_model_out$asv_id) %>%
@@ -90,7 +116,7 @@ tank_out <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
                         TRUE ~ 'Commensalist'))
 
 
-asv_table <- select(ml_model_out, phylum:species, 
+asv_table_supplement <- select(ml_model_out, phylum:species, 
                     asv_id, median_rank, FDR) %>%
   relocate(`asv_id`, .after = `species`) %>%
   left_join(select(taxonom_confidence, asv_id, ends_with('confidence')) %>%
@@ -121,6 +147,51 @@ asv_table <- select(ml_model_out, phylum:species,
   relocate(`PostvPreD`, .after = `2017_S`) %>%
   relocate(`PostvPreH`, .after = `2017_S`) %>%
   relocate(`DvN`, .after = `PostvPreD`) 
+write_csv(asv_table_supplement, '../../Results/Table45_asv_table_supplement.csv')  
+
+
+asv_table <- select(ml_model_out, phylum:species, 
+                    asv_id, median_rank, FDR) %>%
+  relocate(`asv_id`, .after = `species`) %>%
+  left_join(select(taxonom_confidence, asv_id, ends_with('confidence')) %>%
+              select(-domain_confidence), 
+            by = 'asv_id') %>%
+  
+  rename_with(~str_c(., '_name'), .cols = phylum:species) %>%
+  pivot_longer(cols = c(ends_with('name'), ends_with('confidence')),
+               names_to = c('taxon_level', '.value'),
+               names_pattern = '(.*)_(.*)') %>% 
+  mutate(taxon_level = str_to_sentence(taxon_level),
+         name = case_when(is.na(confidence) ~ name,
+                          confidence < 80 ~ '',
+                          TRUE ~ name),
+         # name = str_c(name, ' (', scales::percent(confidence, scale = 1), ')'),
+         .keep = 'unused') %>% 
+  pivot_wider(names_from = taxon_level, values_from = name) %>%
+  relocate(asv_id:FDR, .after = Species) %>%
+  select(-FDR) %>%
+  
+  full_join(field_out2,
+            by = 'asv_id') %>%
+  left_join(tank_out,
+            by = 'asv_id') %>%
+  select(-PostvPreH) %>%
+  rename(ID = asv_id,
+         Field = estimate,
+         Disease = DvH,
+         Exposure = DvN,
+         'After Before' = PostvPreD,
+         'Median Rank' = median_rank) %>%
+  mutate(across(where(is.character), ~str_replace_all(., '\\+-', ' ± '))) %>%
+  relocate(`After Before`, .after = `Field`) %>%
+  relocate(`Exposure`, .after = `After Before`) %>%
+  mutate(across(`After Before`:DHvNH, ~if_else(str_detect(., '\\*'), str_remove_all(., ' \\*'), 'n/s'))) %>%
+  select(-Phylum:-Class, -DDvNH, -DHvNH) %>%
+  relocate(Order:Species, .after = likely_type) %>%
+  mutate(across(everything(), ~replace_na(., '-')),
+         Species = if_else(Species == '' & Genus != '', str_c(Genus, ' sp.'), Species),
+         likely_type = if_else(likely_type == 'Commensalist', '-', likely_type)) %>% 
+  select(-Genus, -Disease)
 
 write_csv(asv_table, '../../Results/Table45_asv_table.csv')  
 
