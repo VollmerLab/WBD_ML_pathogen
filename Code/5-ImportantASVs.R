@@ -12,6 +12,7 @@ library(emmeans)
 library(broom)
 library(patchwork)
 library(multidplyr)
+library(ggtext)
 
 #### N ASVs ####
 alpha <- 0.05
@@ -127,8 +128,6 @@ sig_correlated_asvs <- field_data %>%
             .groups = 'drop') %>%
   mutate(p_adj = p.adjust(p.value, method = 'fdr')) 
 
-%>%
-  filter(p_adj < alpha)
 
 sig_correlated_asvs %>%
   filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
@@ -185,190 +184,76 @@ field_data %>%
   chisq.test()
 #When only one or the other is present ASV25 is more associated with field samples with disease
 
-96/sum(c(96,16,28,3))
-
-#### Get sequences of ASVs and BLAST ####
-if(!file.exists('../intermediate_files/interesting_asv_16s.fasta')){
-  read_rds('../intermediate_files/prepped_microbiome.rds.gz') %>%
-    prune_taxa(taxa_names(.) %in% as.character(shap_importance$asv_id), .) %>%
-    refseq %>%
-    Biostrings::writeXStringSet(filepath = '../intermediate_files/interesting_asv_16s.fasta')
-}
-
-## BLAST on NCBI ##
-
-if(file.exists('../intermediate_files/interesting_asv_blast_classifications.csv.gz')){
-  the_taxa_complete <- read_csv('../intermediate_files/interesting_asv_blast_classifications.csv.gz', show_col_types = FALSE)
-} else {
-  # library(multidplyr)
-  library(rentrez)
-  library(taxize)
-  
-  find_taxonomy <- function(sub_id){
-    nuccore_search <- entrez_search(db = 'nuccore', term = sub_id)
-    
-    taxon_link <- entrez_link(dbfrom = 'nuccore', id = nuccore_search$ids, db = 'taxonomy')
-    
-    taxon_result <- entrez_fetch(db = 'taxonomy', id = taxon_link$links$nuccore_taxonomy, rettype = 'txt')
-    taxon_result
-  }
-  
-  get_higher_taxa <- function(species_name){
-    initial_taxa <- classification(species_name, db = 'ncbi') 
-    
-    initial_taxa[[1]] %>%
-      as_tibble() %>%
-      filter(rank %in% c('domain', 'kingdom', 'phylum', 
-                         'class', 'order', 'family', 
-                         'genus', 'species')) %>%
-      select(rank, name) %>%
-      pivot_wider(names_from = rank, values_from = name)
-  }
-  
-  # the_cluster <- new_cluster(parallel::detectCores() - 1)
-  # cluster_library(the_cluster, c('dplyr', 'rentrez', 'taxize',
-  #                                'tibble', 'tidyr', 'purrr'))
-  # cluster_copy(the_cluster, c('find_taxonomy', 'get_higher_taxa'))
-  
-  the_taxa <- read_csv('../intermediate_files/UP5UBP83013-Alignment-HitTable.csv',
-                       col_names = c("asv_id", "subject.id", "identity", "alignment.length", 
-                                     "mismatches", "gap.opens", "q.start", "q.end", "s.start", 
-                                     "s.end", "evalue", "bit.score"),
-                       show_col_types = FALSE) %>%
-    nest_by(subject.id) %>%
-    # partition(the_cluster) %>%
-    mutate(ncbi_species_raw = possibly(find_taxonomy, otherwise = NA_character_)(subject.id)) %>%
-    # collect %>%
-    ungroup %>%
-    mutate(ncbi_species = str_remove(ncbi_species_raw, '^.*Error.*\\\n') %>%
-             str_extract(' .*\\\n') %>% 
-             str_remove('^ ') %>% 
-             str_remove('\\\n$'))
-  
-  successful_finds <- filter(the_taxa, !is.na(ncbi_species))
-  failed_finds <- filter(the_taxa, is.na(ncbi_species))
-  
-  z <- 0
-  if(nrow(failed_finds) > 0 & z <= 5){
-    z <- z + 1
-    new_finds <- failed_finds %>%
-      select(-starts_with('ncbi')) %>%
-      rowwise() %>%
-      mutate(ncbi_species_raw = possibly(find_taxonomy, otherwise = NA_character_)(subject.id)) %>%
-      # collect %>%
-      ungroup %>%
-      mutate(ncbi_species = str_remove(ncbi_species_raw, '^.*Error.*\\\n') %>%
-               str_extract(' .*\\\n') %>% 
-               str_remove('^ ') %>% 
-               str_remove('\\\n$'))
-    
-    new_success <- filter(new_finds, !is.na(ncbi_species))
-    successful_finds <- bind_rows(successful_finds, new_success)
-    
-    failed_finds <- filter(new_finds, is.na(ncbi_species))
-  }
-  the_taxa <- bind_rows(successful_finds, failed_finds)
-  
-  the_taxa_complete <- the_taxa %>%
-    nest_by(ncbi_species) %>%
-    # partition(the_cluster) %>%
-    mutate(possibly(get_higher_taxa, 
-                    otherwise = tibble('domain' = NA_character_, 'kingdom' = NA_character_, 'phylum' = NA_character_, 
-                                       'class' = NA_character_, 'order' = NA_character_, 'family' = NA_character_, 
-                                       'genus' = NA_character_, 'species' = NA_character_))(ncbi_species)) %>%
-    # collect %>%
-    ungroup %>%
-    unnest(data, keep_empty = TRUE) %>%
-    unnest(data, keep_empty = TRUE) %>%
-    janitor::remove_empty(which = 'cols')
-  
-  
-  write_csv(the_taxa_complete, '../intermediate_files/interesting_asv_blast_classifications.csv.gz')
-}
-
-#https://chanzuckerberg.zendesk.com/hc/en-us/articles/360050963352-A-Guide-to-BLAST
-#Most hits to a single species regardless of score
-the_taxa_complete %>%
-  filter(!is.na(genus)) %>%
-  group_by(asv_id) %>%
-  count(phylum, class, order, family, genus, species) %>%
-  filter(n == max(n))
+#### Pathogen Counting ####
+pathogen_counts <- filter(field_data, asv_id %in% str_c('ASV', c(8, 25, 38))) %>%
+  select(asv_id, sample_id, log2_cpm_norm, health) %>%
+  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm) %>%
+  mutate(across(starts_with('ASV'), ~. > min(.)),
+         combination = case_when(ASV8 & !ASV25 & !ASV38 ~ 'only8',
+                                 !ASV8 & ASV25 & !ASV38 ~ 'only25',
+                                 !ASV8 & !ASV25 & ASV38 ~ 'only38',
+                                 
+                                 ASV8 & ASV25 & !ASV38 ~ 'both_8_25',
+                                 ASV8 & !ASV25 & ASV38 ~ 'both_8_38',
+                                 !ASV8 & ASV25 & ASV38 ~ 'both_25_38',
+                                 
+                                 !ASV8 & !ASV25 & !ASV38 ~ 'none',
+                                 ASV8 & ASV25 & ASV38 ~ 'all',
+                                 
+                                 TRUE ~ 'other')) %>%
+  count(health, combination) %>%
+  pivot_wider(names_from = combination,
+              values_from = n,
+              values_fill = 0) 
 
 
-#Max bitscore then "vote" by most hits to a single species
-the_taxa_complete %>%
-  filter(!is.na(genus)) %>%
-  group_by(asv_id) %>%
-  filter(bit.score == max(bit.score)) %>%
-  count(phylum, class, order, family, genus, species) %>%
-  filter(n == max(n)) 
+select(pathogen_counts, -starts_with('both'))
+column_to_rownames(pathogen_counts, 'health')
+
+column_to_rownames(pathogen_counts, 'health') %>%
+  apply(1, sum)
+
+select(pathogen_counts, health, all, none) %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  chisq.test(simulate.p.value = FALSE)
+
+select(pathogen_counts, health, starts_with('only')) %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  chisq.test(simulate.p.value = FALSE)
+
+select(pathogen_counts, health, all, none, starts_with('only')) %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  # fisher.test(simulate.p.value = FALSE)
+  chisq.posthoc.test()
 
 
-#Min e-value then max alignment length then "vote"
-the_taxa_complete %>%
-  filter(!is.na(genus)) %>%
-  group_by(asv_id) %>%
-  filter(evalue == min(evalue)) %>%
-  filter(alignment.length == max(alignment.length)) %>%
-  count(phylum, class, order, family, genus, species) %>%
-  filter(n == max(n)) %>% View
-
-the_taxa_complete %>%
-  filter(asv_id == 'ASV8') %>% 
-  arrange(evalue, alignment.length) %>% filter(species == 'Vibrio coralliilyticus')
-
-#Chat GPT suggestion
-holistic_metric_function <- function(e_value, percent_identity, bit_score, alignment_length, w = c(-3, 2, 1, 1)){
-  w[1] * log(e_value + 1e-300) + w[2] * percent_identity + w[3] * bit_score + w[4] * alignment_length
-}
+select(pathogen_counts, health, starts_with('both')) %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  fisher.test(simulate.p.value = FALSE)
 
 
-the_taxa_complete %>%
-  # filter(!is.na(genus)) %>%
-  mutate(holistic = holistic_metric_function(evalue, identity, bit.score, alignment.length, c(-5, 3, 4, 2))) %>%
-  group_by(asv_id) %>%
-  filter(holistic == max(holistic)) %>%
-  count(phylum, class, order, family, genus, species) %>%
-  filter(n == max(n)) %>% View
-
-
-recursive_vote <- function(data, taxonomic_levels) {
-  result <- data
-  for (level in taxonomic_levels) {
-    if(level == 'species'){
-      if(sum(str_detect(result$species, 'sp\\.')) < nrow(result)){
-        result <- filter(result, !str_detect(species, 'sp\\.'))
-      }
-    }
-    result <- result %>%
-      count(!!sym(level)) %>%
-      filter(n == max(n)) %>%
-      select(all_of(level)) %>%
-      left_join(result, by = level)
-  }
-  
-  select(result, all_of(taxonomic_levels)) %>%
-    distinct
-}
-
-the_taxa_complete %>%
-  nest_by(asv_id) %>%
-  reframe(recursive_vote(data, c('phylum', 'class', 'order', 'family', 'genus', 'species'))) 
-
-the_taxa_complete %>%
-  filter(!is.na(genus)) %>%
-  mutate(holistic = holistic_metric_function(evalue, identity, bit.score, alignment.length, c(-5, 3, 4, 2))) %>%
-  group_by(asv_id) %>%
-  filter(holistic == max(holistic)) %>%
-  ungroup %>%
-  nest_by(asv_id) %>%
-  reframe(recursive_vote(data, c('phylum', 'class', 'order', 'family', 'genus', 'species'))) %>% 
-  mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  arrange(asv_id) %>% View
-
-filter(the_taxa_complete, asv_id == 'ASV25') %>%
-  mutate(holistic = holistic_metric_function(evalue, identity, bit.score, alignment.length, c(-5, 3, 4, 2))) %>%
-  arrange(-holistic) %>% View
+select(pathogen_counts, health, starts_with('only'), starts_with('both')) %>%
+  pivot_longer(cols = -health,
+               names_to = 'asv',
+               values_to = 'number') %>%
+  mutate(asv = str_remove(asv, 'only'),
+         asv = str_remove(asv, 'both_'),
+         asv = str_split(asv, '_')) %>%
+  unnest(asv) %>%
+  group_by(health, asv) %>%
+  summarise(n = sum(number),
+            .groups = 'drop') %>%
+  pivot_wider(names_from = asv,
+              values_from = n,
+              names_prefix = 'asv') %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  chisq.test(simulate.p.value = FALSE)
+  # chisq.posthoc.test()
 
 #### Model ASVs in Field ####
 # model <- field_asv_models$model[[1]]
@@ -574,7 +459,7 @@ test_within_timepoint <- function(model, data){
 cluster <- new_cluster(parallel::detectCores() / 2)
 cluster_library(cluster, c('rstanarm', 'lmerTest', 'emmeans', 'dplyr', 
                            'tidyr', 'tibble', 'ggplot2', 'stringr',
-                           'lubridate'))
+                           'lubridate', 'magrittr'))
 cluster_copy(cluster, c('plot_field', 'extract_significance',
                         'make_coef_table', 'test_within_timepoint',
                         'make_fc_table'))
@@ -635,8 +520,7 @@ ggsave('../Results/important_asvs_field.png', height = 15, width = 15)
 
 
 #### Model ASVs in tanks ####
-# model<-tank_asv_models$model[[1]]; data <- tank_asv_models$data[[1]]; field_fitted <- tank_asv_models$just_health_fit[[1]]
-# field_fitted <- field_asv_models$all_health_fit[[1]]
+# model<-tank_asv_models$model[[122]]; data <- tank_asv_models$data[[122]]; field_fitted <- tank_asv_models$all_health_fit[[122]]
 
 plot_prePost <- function(model, data, field_fitted){
   initial_emmean <- emmeans(model, ~time_treat)
@@ -649,16 +533,33 @@ plot_prePost <- function(model, data, field_fitted){
     emmeans(~ treat_out) %>%
     broom::tidy(conf.int = TRUE) %>%
     mutate(prePost = if_else(str_detect(treat_out, 'pre'), 'Pre', 'Post'),
-           prePost = factor(prePost, levels = c('Field', 'Pre', 'Post')),
+           prePost = factor(prePost, levels = c('Field', 'Pre', 'Post'), labels = c('Field', 'Pre-Exposure', 'Post-Exposure')),
            
            exposure = str_extract(treat_out, '^[DN]'),
            health = str_extract(treat_out, '[DH]$')) %>%
     bind_rows(broom::tidy(field_fitted, conf.int = TRUE) %>%
                 mutate(prePost = factor('Field', levels = c('Field', 'Pre', 'Post')))) %>%
+    mutate(health = factor(health, levels = c('H', 'D'), labels = c('Healthy', 'Diseased')),
+           exposure = if_else(is.na(exposure), 'Field', exposure),
+           exposure = factor(exposure, levels = c('Field', 'N', 'D'), labels = c('Field', 'Control', 'Disease')),
+           season = case_when(is.na(season) ~ NA_character_,
+                              season == 'S' ~ 'Jul',
+                              season == 'W' ~ 'Jan'),
+           timepoint = if_else(is.na(year), 'Tank', str_c(year, season, sep = '_'))) %>%
+    
+    
     ggplot(aes(x = prePost, y = estimate, colour = health, shape = exposure)) +
-    geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
-                    position = position_dodge2(0.5)) +
-    scale_shape_manual(values = c('D' = 'circle', 'N' = 'triangle'), na.value = 'square')
+    # geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
+    #                 position = position_dodge2(0.5)) +
+    geom_linerange(aes(ymin = conf.low, ymax = conf.high),
+                  position = position_dodge2(0.5), 
+                  linewidth = 1, show.legend = FALSE) +
+    geom_point(position = position_dodge2(0.5), size = 5) +
+    # scale_shape_manual(values = c('D' = 'circle filled', 'N' = 'triangle filled'), 
+    #                    na.value = 'square filled') +
+    scale_shape_manual(values = c('Disease' = 'circle', 'Control' = 'triangle', 'Field' = 'square')) +
+    scale_colour_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
+                                           c('Healthy', 'Diseased')))
   
 }
 
@@ -729,13 +630,7 @@ if(file.exists('../intermediate_files/tank_asv_models.rds.gz') & !rerun_models){
     mutate(model = list(lmer(log2_cpm_norm ~ time_treat + (1 | geno) + (1 | tank_id),
                              data = data))) %>%
     
-    mutate(plot = list(plot_prePost(model, data, field_fitted = all_health_fit) +
-                         labs(y = 'log2(CPM)', x = 'Days') +
-                         theme_classic() +
-                         theme(legend.position = 'none',
-                               panel.background = element_rect(colour = 'black'),
-                               axis.text = element_text(colour = 'black'),
-                               strip.background = element_blank())),
+    mutate(plot = list(plot_prePost(model, data, field_fitted = all_health_fit)),
            
            extract_significance(model, anova_summary = 'anova'),
            tank_posthocs(model)) %>%
@@ -772,6 +667,8 @@ tank_asv_models %>%
   wrap_plots()
 
 
+
+
 classified_plots <- tank_asv_models %>%
   filter(asv_id %in% shap_importance$asv_id) %>%
   mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
@@ -792,26 +689,87 @@ classified_plots <- tank_asv_models %>%
          likely_type = factor(likely_type, levels = c('Pathogen', 'Opportunist', 'Commensalist')),
          asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
   arrange(asv_id) %>%
+  filter(likely_type %in% c('Pathogen', 'Opportunist') | asv_id == 'ASV40') %>%
   
   # select(asv_id, starts_with('pvalue'), likely_type)
   
   left_join(taxonomy, by = 'asv_id') %>%
   rowwise %>%
-  mutate(plot = list(plot + labs(title = str_c(order, family, genus, species, asv_id, sep = '\n'))+
-                       theme(plot.title = element_text(size = 10)))) %>%
+  mutate(plot = if_else(likely_type == 'Opportunist',
+                        list(plot + scale_x_discrete(labels = ~str_replace(., '-', '\n'))),
+                        list(plot))) %>%
+  mutate(plot = list(plot + 
+                       labs(y = 'log<sub>2</sub>(CPM)', 
+                            x = NULL,
+                            colour = 'Disease\nState',
+                            shape = 'Experimental\nCondition') +
+                       theme_classic() +
+                       theme(panel.background = element_rect(colour = 'black'),
+                             axis.text = element_text(colour = 'black', size = 12),
+                             legend.text = element_text(colour = 'black', size = 12),
+                             axis.title.y = element_markdown(colour = 'black', size = 18),
+                             legend.title = element_text(colour = 'black', size = 14),
+                             axis.text.x = element_text(colour = 'black', size = 12)))) %>%
+  
+  # mutate(plot = list(plot + labs(title = str_c(order, family, genus, species, asv_id, sep = '\n')) +
+  #                      theme(plot.title = element_text(size = 10)))) %>%
+  
+  mutate(name = case_when(asv_id == 'ASV25' ~ '<i>Cysteiniphilum litorale</i>',
+                          asv_id == 'ASV8' ~ '<i>Vibrio sp.</i>',
+                          asv_id == 'ASV26' ~ 'Oceanospirillaceae',
+                          asv_id == 'ASV30' ~ '<i>Thalassotalea sp.</i>',
+                          asv_id == 'ASV361' ~ '<i>Endozoicomonas atrinae</i>',
+                          asv_id == 'ASV38' ~ '<i>Neptuniibacter sp.</i>',
+                          asv_id == 'ASV51' ~ '<i>Neptuniibacter sp.</i>',
+                          asv_id == 'ASV40' ~ '<i>Qipengyuania sp.</i>',
+                          TRUE ~ 'Unknown'),
+         plot = list(plot + 
+                       labs(title = name) +
+                       theme(plot.title = element_markdown(colour = 'black', size = 14)))) %>%
+  
   ungroup %>%
+  filter(asv_id != 'ASV40') %>%
   arrange(likely_type) %>%
   group_by(likely_type) %>%
-  summarise(plot_set = list(wrap_plots(plot, nrow = 1, tag_level = 'new') + plot_annotation(title = likely_type))) %>%
+  summarise(plot_set = list(wrap_plots(plot, nrow = 1) + plot_layout(axis_titles = 'collect_y'))) %>%
   pull(plot_set) %>%
-  wrap_plots(nrow = 3, tag_level = 'new')
+  wrap_plots(nrow = 2) +
+  plot_layout(guides = 'collect') +
+  
+  plot_annotation(tag_levels = list(c('A', '', '', 'B', '', '', '', 'C'))) &
+  theme(plot.tag = element_text(face = 'bold', size = 22)) 
   
 classified_plots
-ggsave('../Results/Fig8_important_asvs.png', height = 15, width = 15)
+ggsave('../Results/Fig10_important_asvs.png', height = 15, width = 15)
 
-classified_plots +
-  plot_annotation(tag_levels = list('A', c(NULL)))
 
+#### Stats for paper ####
+tank_asv_models %>%
+  filter(asv_id %in% shap_importance$asv_id) %>%
+  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
+  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
+  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
+  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
+  # filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
+  filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
+  select(asv_id, pvalue_PostvPreD, pvalue_DvN, pvalue_DDvDH)
+
+tank_asv_models %>%
+  filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
+  select(asv_id, tank_posthoc) %>%
+  rowwise(asv_id) %>%
+  reframe(update(tank_posthoc, type = 'response') %>%
+            as_tibble()) %>%
+  filter(contrast %in% c('PostvPreD', 'DvN', 'DDvDH'))
+
+tank_asv_models %>%
+  filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
+  select(asv_id, tank_posthoc) %>%
+  rowwise(asv_id) %>%
+  reframe(update(tank_posthoc, type = 'response') %>%
+            as_tibble()) %>%
+  filter(contrast %in% c('PostvPreD', 'DvN', 'DDvDH')) %>%
+  arrange(contrast)
 
 #### P/A % plots ####
 raw_pa_data <- tank_asv_models %>%

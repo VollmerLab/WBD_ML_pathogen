@@ -406,7 +406,7 @@ asv_ranks <- rank_asvs(filter(individual_shap_values, wflow_id %in% models_use),
 write_csv(asv_ranks, '../Results/asv_importance.csv.gz')
 
 rank_plots <- rank_plot(asv_ranks)
-ggsave('../Results/asv_medianImportance.png', plot = rank_plots, height = 20, width = 7)
+ggsave('../Results/Fig8_asv_medianImportance.png', plot = rank_plots, height = 20, width = 7)
 
 retain_asvs <- filter(asv_ranks, p_adjust < alpha) %>%
   pull(asv_id)
@@ -554,7 +554,7 @@ shap_importance_bump <- model_important_asvs %>% #count(asv_rank)
   theme(legend.position = 'bottom',
         legend.direction = 'horizontal',
         legend.text = element_text(colour = 'black', size = 8))
-ggsave('../Results/Fig7_shap_importance_bump.png', plot = shap_importance_bump, height = 7, width = 11)
+ggsave('../Results/Fig9_shap_importance_bump.png', plot = shap_importance_bump, height = 7, width = 11)
 
 #### SHAP Summary ####
 shap_summary_plot <- individual_shap_values %>% 

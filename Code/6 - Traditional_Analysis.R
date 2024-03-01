@@ -47,110 +47,6 @@ ml_classifications <- read_csv('../Results/Table45_asv_table_supplement.csv',
   select(-likely_type) %>%
   rename(asv_id = ID)
 
-#### All Random Model ####
-random_models <- field_data %>%
-  partition(cluster) %>%
-  mutate(model = list(lmer(log2_cpm_norm ~ health + (1 | timepoint) + (1 | site),
-                           data = data)),
-         anova_table = list(anova(model, ddf = "Kenward-Roger")),
-         d_h = as_tibble(emmeans(model, 'pairwise'~health)$contrast)$estimate, #Diseased - Healthy
-         nDF = anova_table$NumDF,
-         dDF = anova_table$DenDF,
-         fvalue = anova_table$`F value`,
-         pvalue = anova_table$`Pr(>F)`) %>%
-  collect %>%
-  ungroup
-
-
-#### Get Significance ####
-random_models %>%
-  mutate(padjust = p.adjust(pvalue, method = 'fdr')) %>%
-  filter(padjust < alpha) %>%
-  group_by(more_disease = d_h > 0) %>%
-  summarise(n = n(),
-            across(c(domain:asv_id), n_distinct))
-
-random_models %>%
-  mutate(padjust = p.adjust(pvalue, method = 'fdr')) %>%
-  filter(padjust < alpha) %>%
-  group_by(more_disease = d_h > 0, across(domain:genus)) %>%
-  summarise(n = n()) %>%
-  ungroup %>%
-  mutate(higher_taxa = str_c(class, order, family, genus, sep = '; '),
-         n = if_else(more_disease, n, -1 * n),
-         higher_taxa = fct_reorder(higher_taxa, abs(n), .fun = sum)) %>%
-  ggplot(aes(y = higher_taxa, x = n, fill = more_disease)) +
-  geom_col() 
-  
-
-
-random_models %>%
-  mutate(padjust = p.adjust(pvalue, method = 'fdr')) %>%
-  filter(padjust < alpha) %>%
-  group_by(more_disease = d_h > 0, across(domain:genus)) %>%
-  summarise(n = n()) %>%
-  ungroup %>%
-  mutate(higher_taxa = str_c(class, order, family, genus, sep = '; '),
-         higher_taxa = fct_reorder(higher_taxa, abs(n), .fun = sum)) %>%
-  ggplot(aes(y = higher_taxa, x = n, fill = more_disease)) +
-  geom_linerange(aes(xmin = 0, xmax = n), position = position_dodge(0.5),
-                 linetype = 'dashed') +
-  geom_point(shape = 21, position = position_dodge(0.5), size = 5) +
-  scale_x_continuous(trans = scales::log10_trans())
-
-select(random_models, -where(is.list)) %>%
-  mutate(fdr = p.adjust(pvalue, method = 'fdr'),
-         fdr = fdr < alpha,
-         positive = d_h > 0) %>%
-  upset(data = ., 
-        intersect = select(., where(is.logical)) %>% colnames,
-        annotations = list(
-          'Order' = ggplot(mapping = aes(fill = order)) +
-            geom_bar(stat = 'count', position = 'fill') +
-            scale_y_continuous(labels=scales::percent_format())
-        )
-  )
-
-
-#### Fixed Model ####
-fixed_models <- field_data %>%
-  partition(cluster) %>%
-  mutate(model = list(gls(log2_cpm_norm ~ health * timepoint * site,
-                           data = data)),
-         
-         anova(model, type = 'marginal') %>%
-           as_tibble(rownames = 'term') %>%
-           select(term, `p-value`) %>%
-           filter(term != '(Intercept)') %>%
-           pivot_wider(names_from = term, values_from = `p-value`) %>%
-           rename_with(~str_replace_all(., ':', 'X'))) %>%
-  collect %>%
-  ungroup
-
-
-## Upset Plot ##
-
-
-?upset
-
-select(fixed_models, -where(is.list)) %>%
-  mutate(across(health:healthXtimepointXsite, ~p.adjust(., method = 'fdr')),
-         across(health:healthXtimepointXsite, ~. < alpha)) %>%
-  upset(data = ., 
-        intersect = select(., where(is.logical)) %>% colnames,
-        annotations = list(
-          'Order' = ggplot(mapping = aes(fill = order)) +
-            geom_bar(stat = 'count', position = 'fill') +
-            scale_y_continuous(labels=scales::percent_format())
-        )
-  )
-
-select(fixed_models, -where(is.list)) %>%
-  mutate(across(health:healthXtimepointXsite, ~p.adjust(., method = 'fdr')),
-         across(health:healthXtimepointXsite, ~. < alpha)) %>%
-  filter(if_any(contains('health'))) 
-
-
 #### Match Consistency Model - fixed timepoint, random site ####
 fixed_models <- field_data %>%
   partition(cluster) %>%
@@ -168,13 +64,380 @@ fixed_models <- field_data %>%
   ungroup
 
 
-
+#### Make Plot ####
 colour_options <- read_rds('../intermediate_files/asv_colors.rds')
 microbe_colors <- set_names(colour_options$color_palette$hex,
           colour_options$color_palette$group)
 levels(colour_options$asv_clumping$Top_order)
 
-base_plot <- select(fixed_models, -where(is.list)) %>%
+base_plot_data <- select(fixed_models, -where(is.list)) %>%
+  left_join(colour_options$asv_clumping,
+            by = c('order', 'genus')) %>%
+  mutate(group = case_when(!is.na(group) ~ group,
+                           is.na(group) & order == 'Oceanospirillales' ~ 'Oceanospirillales-Other',
+                           is.na(group) & order == 'Rhodobacterales' ~ 'Rhodobacterales-Other',
+                           is.na(group) & order == 'Alteromonadales' ~ 'Alteromonadales-Other',
+                           is.na(group) & order == 'Thiotrichales' ~ 'Thiotrichales-Other',
+                           is.na(group) & order == 'Vibrionales' ~ 'Vibrionales-Other',
+                           TRUE ~ 'Other-Other'),
+         group = factor(group, levels = levels(colour_options$asv_clumping$group))) %>%
+  # filter(!is.na(group)) %>%
+  select(-Top_order, -Top_genus) %>%
+  rename(the_colour = group) %>%
+  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
+         across(health:healthXtimepoint, ~. < alpha),
+         health_d = health & up_disease,
+         health_h = health & !up_disease) %>%
+  rename('Disease State' = health,
+         'Disease Associated' = health_d,
+         'Healthy Associated' = health_h,
+         'Time' = timepoint,
+         'Disease State x Time' = healthXtimepoint) %>%
+  select(-up_disease, -`Disease State`) %>%
+  mutate(top_asv = if_else(asv_id %in% shap_importance$asv_id, 'yes', 'no')) %>%
+  # mutate(top_asv = case_when(asv_id %in% c('ASV25', 'ASV8', 'ASV38') ~ 'Pathogen',
+  #                            asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51') ~ 'Opportunist',
+  #                            TRUE ~ top_asv)) %>%
+  left_join(ml_classifications,
+            by = 'asv_id') %>%
+  mutate(type = if_else(is.na(type), NA_character_, 'ML'))
+
+
+base_plot <- base_plot_data %>%
+  filter(!if_all(where(is.logical), ~!.)) %>%
+  mutate(Time = Time | `Disease State x Time`, .keep = 'unused') %>%
+  filter(`Disease Associated` | `Healthy Associated`) %>%
+  # relocate(Time, .after = `Disease State x Time`) %>%
+  # select(-Time) %>%
+  
+  upset(data = ., 
+        intersect = select(., where(is.logical)) %>% colnames,
+        base_annotations = list(
+          'Intersection size' = intersection_size(
+            counts = TRUE,
+            mapping = aes(fill = type)
+          ) + 
+            # scale_fill_manual(values = c('yes' = 'red', 'no' = '#595959', 
+            #                              'Pathogen' = 'orange', 'Opportunist' = 'green')) +
+            scale_fill_discrete(na.value = '#595959') +
+            theme(legend.position = 'left')
+        ),
+        annotations = list(
+          'Order' = ggplot(mapping = aes(fill = the_colour)) +
+            geom_bar(stat = 'count', position = 'fill', show.legend = FALSE) +
+            scale_y_continuous(labels=scales::percent_format()) +
+            scale_fill_manual(values = microbe_colors) +
+            labs(y = 'Abundance')
+        ),
+        
+        set_sizes=(
+          upset_set_size() + 
+            geom_text(aes(label = after_stat(count)), hjust = 0, stat = 'count', colour = 'white') +
+          # + annotate(geom='text', label='@', x='Drama', y=850, color='white', size=3) +
+            # expand_limits(y = 200) +
+            theme(axis.text.x = element_text(angle = 0))
+        ), 
+        # min_size = 10,
+        sort_sets = FALSE, 
+        name = NULL
+  )
+
+legend_space <- plot_grid(colour_options$legend, NULL, nrow = 2)
+
+plot_grid(base_plot, colour_options$legend, rel_widths = c(1, .25))
+ggsave('../Results/Fig5_traditional_complexUpset.png', 
+       height = 12, width = 10, bg = 'white')
+
+
+select(fixed_models, -where(is.list)) %>%
+  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
+         across(health:healthXtimepoint, ~. < alpha)) %>%
+  filter(if_any(contains('health'))) %>%
+  count(up_disease)
+
+
+
+select(fixed_models, -where(is.list)) %>%
+  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
+         across(health:healthXtimepoint, ~. < alpha)) %>%
+  filter(if_any(contains('health'))) %>%
+  count(up_disease, genus) %>%
+  count(up_disease)
+
+
+#### Composition Analysis ####
+tst_data <- base_plot_data %>%
+  group_by(across(c(genus, where(is.logical)))) %>%
+  summarise(n = n_distinct(asv_id),
+            .groups = 'drop') %>%
+  rowwise %>%
+  mutate(allFalse = all(!c_across(where(is.logical)))) %>%
+  ungroup %>%
+  mutate(row_id = row_number()) %>%
+  pivot_longer(cols = where(is.logical),
+               names_to = 'term',
+               values_to = 'sig') %>%
+  filter(sig) %>%
+  group_by(row_id, genus, n) %>%
+  summarise(intersection = str_c(term, collapse = '; '),
+            .groups = 'drop') %>%
+  select(-row_id) 
+
+tst_data <- tst_data %>%
+  mutate(new_intersection = case_when(intersection == 'allFalse' ~ 'allFalse',
+                                      intersection == 'Sampling Time' ~ 'Sampling Time',
+                                      str_detect(intersection, 'Health State \\(Healthy\\)') ~ 'healthy',
+                                      str_detect(intersection, 'Health State \\(Diseased\\)') ~ 'disease',
+                                      TRUE ~ intersection)) %>%
+  group_by(genus, new_intersection) %>%
+  summarise(n = sum(n), 
+            .groups = 'drop')
+
+tst_data %>%
+  filter(genus != 'NA') %>%
+  filter(sum(n) > 5, .by = 'genus') %>%
+  filter(sum(n) > 7, .by = 'new_intersection') %>%
+  pivot_wider(names_from = 'new_intersection',
+              values_from = 'n',
+              values_fill = 0L) %>%
+  column_to_rownames('genus') %>%
+  chisq.test(simulate.p.value = FALSE)
+
+
+# x <- 1; k <- 3; m <- 24; N <- 342
+row_fisher <- function(x, k, m, N, direction = 'two.sided'){
+  ##https://dputhier.github.io/ASG/practicals/go_statistics_td/go_statistics_td_2015.html
+  data.frame(significant = c(x, m - x),
+             not_significant = c(k - x, N - m - (k - x))) %>%
+    fisher.test(alternative = direction) %>%
+    tidy
+}
+
+
+tst_data %>%
+  filter(genus != 'NA') %>%
+  rename(n_asv = n) %>%
+  mutate(n_genus = sum(n_asv), .by = 'genus') %>%
+  mutate(n_intersect = sum(n_asv), .by = 'new_intersection') %>%
+  mutate(total = sum(n_asv)) %>%
+  
+  filter(sum(n_asv) > 5, .by = 'genus') %>%
+  filter(sum(n_asv) > 7, .by = 'new_intersection') %>%
+  rowwise %>%
+  mutate(row_fisher(n_asv, n_genus, n_intersect, total, direction = 'greater')) %>%
+  ungroup %>%
+  # group_by(new_intersection) %>%
+  # mutate(p_adj = p.adjust(p.value, 'fdr')) %>%
+  filter(p.value < 0.05) %>%
+  select(genus, new_intersection, estimate, p.value)
+
+
+######### EXPERIMENTAL ########
+#### Overrepresentation of Orders ####
+tst_data <- select(fixed_models, -where(is.list)) %>%
+  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
+         across(health:healthXtimepoint, ~. < alpha)) %>%
+  filter(if_any(contains('health'))) %>%
+  count(order, family, genus, up_disease) %>%
+  mutate(up_disease = if_else(up_disease, 'disease', 'healthy')) %>%
+  pivot_wider(names_from = up_disease,
+              values_from = n,
+              values_fill = 0) %>%
+  full_join(count(fixed_models, order, family, genus) %>%
+              rename(total = n),
+            by = c('order', 'family', 'genus')) %>%
+  mutate(across(c(healthy, disease), ~replace_na(., 0L))) %>%
+  arrange(-total) 
+
+tst_data %>%
+  filter(total > 2) 
+
+bind_rows(filter(tst_data, total > 3),
+          summarise(tst_data, across(where(is.integer), sum), .by = c('order', 'family')) %>%
+            filter(total > 5),
+          summarise(tst_data, across(where(is.integer), sum), .by = c('order')) %>%
+            filter(total > 5)) 
+
+
+tst_data %>%
+  filter(total > 2) %>%
+  mutate(neither = total - healthy - disease) %>%
+  select(-total) %>%
+  filter(healthy > 0 | disease > 0) %>%
+  rowwise %>%
+  # mutate(binom.test(x = (healthy + disease), 
+  #                   n = (healthy + disease + neither),
+  #                   alternative = 'greater') %>% 
+  #          broom::tidy() %>%
+  #          select(p.value) %>%
+  #          rename(p_associated = p.value)) %>%
+  # filter(p_associated < 0.05) %>%
+  mutate(binom.test(x = healthy, 
+                    n = (healthy + disease + neither),
+                    alternative = 'greater') %>% 
+           broom::tidy() %>%
+           select(p.value) %>%
+           rename(p_healthy = p.value),
+         
+         binom.test(x = disease,
+                    n = (healthy + disease + neither),
+                    alternative = 'greater') %>% 
+           broom::tidy() %>%
+           select(p.value) %>%
+           rename(p_disease = p.value)) %>%
+  ungroup() %>%
+  filter(p_healthy < 0.05 | 
+           p_disease < 0.05)
+
+
+matrix(
+  c(72, 20, 28, 
+    17, 0, 3, 
+    1, 8, 0,
+    8, 0, 1,
+    6, 0, 0,
+    5, 0, 0), 
+  nrow = 6, 
+  byrow = TRUE,
+  dimnames = list(
+    genus = c("Endozoicomonas", "Alteromonas", 'Thalassotalea', 
+              'Pelagibacter', 'Halomonas', 'Sansalvadorimonas'),
+    health = c("healthy", "disease", 'neither'))) %>%
+  chisq.test(simulate.p.value = TRUE)
+
+
+
+
+tst_data %>%
+  mutate(neither = total - healthy - disease) %>%
+  select(-total) %>%
+  filter(healthy > 0 | disease > 0) %>%
+  rowwise %>%
+  mutate(binom.test(x = healthy, 
+                    n = (healthy + disease + neither),
+                    alternative = 'greater') %>% 
+           broom::tidy() %>%
+           select(p.value) %>%
+           rename(p_healthy = p.value),
+         
+         binom.test(x = disease,
+                    n = (healthy + disease + neither),
+                    alternative = 'greater') %>% 
+           broom::tidy() %>%
+           select(p.value) %>%
+           rename(p_disease = p.value)) %>%
+  ungroup() %>%
+  filter(p_healthy < 0.05 | 
+           p_disease < 0.05)
+  
+
+3/10
+(29+11+9+12+4+3) 
+
+row_fisher <- function(x, k, m, N, direction = 'two.sided'){
+  ##https://dputhier.github.io/ASG/practicals/go_statistics_td/go_statistics_td_2015.html
+  data.frame(significant = c(x, m - x),
+             not_significant = c(k - x, N - m - (k - x))) %>%
+    fisher.test(alternative = direction) %>%
+    tidy
+}
+
+select(tst_data, -disease) %>%
+  column_to_rownames('order') %>%
+  chisq.test()
+
+select(tst_data, -disease) %>%
+  mutate(total_healthy = sum(healthy),
+         total_total = sum(total)) %>%
+  filter(total > 1) %>%
+  rowwise %>%
+  mutate(row_fisher(healthy, total, total_healthy, total_total, direction = 'greater')) %>%
+  filter(p.value < 0.05)
+
+select(tst_data, -healthy) %>%
+  mutate(total_disease = sum(disease),
+         total_total = sum(total)) %>%
+  filter(total > 1) %>%
+  rowwise %>%
+  mutate(row_fisher(disease, total, total_disease, total_total, direction = 'greater')) %>%
+  filter(p.value < 0.05)
+
+
+
+tst_data %>%
+  mutate(neither = total - disease - healthy) %>%
+  # filter(total > 5) %>%
+  select(-total) %>%
+  column_to_rownames('order') %>%
+  chisq.test(B = 2000, simulate.p.value = TRUE)
+
+library(chisq.posthoc.test)
+
+tst_data %>%
+  mutate(neither = total - disease - healthy) %>%
+  # filter(total > 5) %>%
+  select(-total, -neither) %>%
+  filter(healthy > 0 | disease > 0) %>%
+  column_to_rownames('order') %>%
+  chisq.test(B = 2000, simulate.p.value = TRUE)
+
+tst_data %>%
+  mutate(neither = total - disease - healthy) %>%
+  # filter(total > 5) %>%
+  select(-total) %>%
+  # filter(healthy > 0 | disease > 0) %>%
+  column_to_rownames('order') %>%
+  chisq.posthoc.test(method = 'fdr',
+                     B = 2000, simulate.p.value = TRUE) %>%
+  as_tibble() %>% 
+  pivot_wider(names_from = Value,
+              values_from = c('healthy', 'disease', 'neither')) %>%
+  pivot_longer(cols = -Dimension,
+               names_to = c('health_association', '.value'),
+               names_pattern = '(.*)_(.*)') %>%
+  mutate(across(c(Residuals, `p values`), ~parse_number(.))) %>%
+  filter(`p values` < 0.05)
+
+#### Try 2 ####
+tmp_data <- select(fixed_models, -where(is.list)) %>%
+  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
+         across(health:healthXtimepoint, ~. < alpha)) %>%
+  count(order, health, timepoint, healthXtimepoint) %>%
+  # filter(order == 'Alteromonadales') %>%
+  mutate(row_id = row_number()) %>%
+  pivot_longer(cols = where(is.logical)) %>%
+  filter(value) %>%
+  group_by(row_id, order, n) %>%
+  summarise(combo = str_c(name, collapse = ' + '),
+            .groups = 'drop') %>%
+  pivot_wider(names_from = combo, values_from = n,
+              values_fill = 0L) %>%
+  select(-row_id) %>%
+  group_by(order) %>%
+  summarise(across(everything(), sum)) 
+
+column_to_rownames(tmp_data, 'order') %>%
+  chisq.test(B = 2000, simulate.p.value = TRUE)
+
+tmp_data %>%
+  pivot_longer(cols = -order) %>%
+  rowwise %>%
+  mutate(name = str_split(name, ' \\+ ')) %>%
+  unnest(name) %>%
+  group_by(order, name) %>%
+  summarise(value = sum(value),
+            .groups = 'drop') %>%
+  pivot_wider() %>%
+  full_join(count(fixed_models, order) %>%
+              rename(total = n),
+            by = 'order') %>%
+  mutate(across(where(is.integer), ~replace_na(., 0))) %>%
+  select(order, health, total) %>%
+  column_to_rownames('order') %>%
+  chisq.test(B = 2000, simulate.p.value = TRUE)
+
+#### Try 3 ####
+upset_data <- select(fixed_models, -where(is.list)) %>%
   left_join(colour_options$asv_clumping,
             by = c('order', 'genus')) %>%
   mutate(group = case_when(!is.na(group) ~ group,
@@ -204,33 +467,88 @@ base_plot <- select(fixed_models, -where(is.list)) %>%
   #                            TRUE ~ top_asv)) %>%
   left_join(ml_classifications,
             by = 'asv_id') %>%
+  group_by(order, across(where(is.logical))) %>%
+  summarise(n = n(),
+            .groups = 'drop') %>%
+  # filter(order %in% levels(colour_options$asv_clumping$Top_order)) %>%
+  mutate(row_id = row_number()) %>%
+  # rowwise %>%
+  mutate(allFALSE = !`Sampling Time` & !`Health State x Sampling Time` & 
+           !`Health State (Diseased)` & !`Health State (Healthy)`) %>%
+  pivot_longer(cols = where(is.logical)) %>%
+  filter(value) %>%
+  select(-value) %>%
+  group_by(order, n, row_id) %>%
+  summarise(name = str_c(name, collapse = '+')) %>%
+  select(-row_id) %>%
+  group_by(order, name) %>%
+  summarise(n = sum(n),
+            .groups = 'drop') %>%
+  pivot_wider(names_from = name,
+              values_from = n,
+              values_fill = 0L) 
+
+upset_data %>%
+  column_to_rownames('order') %>%
+  chisq.test(simulate.p.value = TRUE)
+
+
+upset_data %>%
+  column_to_rownames('order') %>%
+  chisq.posthoc.test(method = 'none',
+                     simulate.p.value = TRUE) %>%
+  as_tibble() %>% 
+  pivot_wider(names_from = Value,
+              values_from = -c(Dimension, Value)) %>%
+  mutate(across(everything(), as.character)) %>%
+  pivot_longer(cols = -Dimension,
+               names_to = c('health_association', '.value'),
+               names_pattern = '(.*)_(.*)') %>%
+  mutate(across(c(Residuals, `p values`), ~parse_number(.)),
+         effect = case_when(`p values` < 0.05 & Residuals > 0 ~ '+',
+                            `p values` < 0.05 & Residuals < 0 ~ '-',
+                            TRUE ~ '0')) %>%
+  # filter(`p values` < 0.05) %>%
+  select(-`p values`, -Residuals) %>%
+  pivot_wider(names_from = health_association,
+              values_from = 'effect',
+              values_fill = '0') %>%
+  arrange(Dimension)
   
-  upset(data = ., 
-        intersect = select(., where(is.logical)) %>% colnames,
-        base_annotations = list(
-          'Intersection size' = intersection_size(
-            counts = TRUE,
-            mapping = aes(fill = type)
-          ) + 
-            # scale_fill_manual(values = c('yes' = 'red', 'no' = '#595959', 
-            #                              'Pathogen' = 'orange', 'Opportunist' = 'green')) +
-            theme(legend.position = 'left')
-        ),
-        annotations = list(
-          'Order' = ggplot(mapping = aes(fill = the_colour)) +
-            geom_bar(stat = 'count', position = 'fill', show.legend = FALSE) +
-            scale_y_continuous(labels=scales::percent_format()) +
-            scale_fill_manual(values = microbe_colors) +
-            labs(y = 'Abundance')
-        ),
-        name = NULL
-  )
-
-plot_grid(base_plot, colour_options$legend,  rel_widths = c(1, .25))
-ggsave('../Results/Fig5_traditional_complexUpset.png', height = 12, width = 10, bg = 'white')
 
 
-select(fixed_models, -where(is.list)) %>%
-  mutate(across(health:healthXtimepoint, ~p.adjust(., method = 'fdr')),
-         across(health:healthXtimepoint, ~. < alpha)) %>%
-  filter(if_any(contains('health'))) 
+tmp <- upset_data %>%
+  pivot_longer(cols = where(is.integer),
+               names_to = 'category',
+               values_to = 'n') %>%
+  nest_by(category) %>%
+  mutate(data = list(full_join(data,
+                               count(fixed_models, order) %>%
+                                 rename(total = n),
+                               by = 'order') %>%
+                       mutate(across(where(is.integer), ~replace_na(., 0L)))))
+
+tmp %>%
+  mutate(data = list(filter(data, n > 0)),
+         n_order = nrow(data)) %>%
+  filter(n_order > 1) %>%
+  mutate(column_to_rownames(data, 'order') %>%
+           chisq.test(simulate.p.value = TRUE) %>%
+           broom::tidy()) %>%
+  filter(p.value < 0.05) %>%
+  mutate(column_to_rownames(data, 'order') %>%
+           chisq.posthoc.test(method = 'fdr', 
+                              simulate.p.value = TRUE) %>%
+           as_tibble() %>%
+           select(-total) %>%
+           pivot_wider(names_from = 'Value',
+                       values_from = 'n') %>%
+           mutate(across(c(Residuals, `p values`), ~as.character(.)),
+                  across(c(Residuals, `p values`), ~parse_number(.)),
+                  effect = case_when(`p values` < 0.05 & Residuals > 0 ~ '+',
+                                     `p values` < 0.05 & Residuals < 0 ~ '-',
+                                     TRUE ~ '0')) %>%
+           select(Dimension, effect) %>%
+           pivot_wider(names_from = 'Dimension',
+                       values_from = 'effect')) %>% View
+
