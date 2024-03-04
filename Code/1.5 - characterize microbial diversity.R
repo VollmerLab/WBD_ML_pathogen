@@ -26,8 +26,8 @@ microbiome_data <- read_rds('../intermediate_files/prepped_microbiome.rds.gz') %
 
 # tax_table(microbiome_data) <- column_to_rownames(updated_taxonomy, 'asv_id') %>% as.matrix
 
-# data <- microbiome_data
-# grouping_levels <- c('dataset', 'year', 'season', 'health')
+data <- microbiome_data
+grouping_levels <- c('dataset', 'year', 'season', 'health')
 # top_choices <- rev(c('Verrucomicrobiales', 'Alteromonadales', 'Vibrionales', 'Campylobacterales', 'Oceanospirillales'))
 
 make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lower_taxon = 'genus',
@@ -105,13 +105,9 @@ make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lo
   
 }
 
-make_microbe_plot(microbiome_data,
-                  grouping_levels = c('dataset', 'year', 'season', 'health'),
-                  highest_taxon = 'order', lower_taxon = 'genus',
-                  legend_key_size = 1, legend_text_size = 14) 
 
 microbial_diversity <- microbiome_data %>%
-  subset_taxa(rownames(tax_table(microbiome_data)) %in% unique_asvs) %>%
+  # subset_taxa(rownames(tax_table(microbiome_data)) %in% unique_asvs) %>%
   make_microbe_plot(grouping_levels = c('dataset', 'year', 'season', 'health'),
                     highest_taxon = 'order', lower_taxon = 'genus',
                     top_choices = rev(c('Vibrionales', 'Thiotrichales',

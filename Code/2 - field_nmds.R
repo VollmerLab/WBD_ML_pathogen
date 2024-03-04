@@ -36,45 +36,21 @@ field_metadata <- read_csv('../intermediate_files/normalized_field_asv_counts.cs
 #### Alpha Diversity Metrics ####
 microbiome_data <- read_rds("../intermediate_files/prepped_microbiome.rds.gz")
 
-microbiome_data %>%
-  subset_samples(is.na(tank)) %>% #sample_data() %>% colnames
-  # subset_samples(health == 'H') %>%
-  estimate_richness(split = FALSE, measures = 'Observed')
+# raw_counts <- otu_table(microbiome_data) %>%
+#   as.data.frame %>%
+#   as_tibble(rownames = 'sample_id') %>%
+#   mutate(the_asvs = cbind(across(starts_with('ASV'))),
+#          .keep = 'unused')
 
-
-subset_samples(microbiome_data, health == 'D' & site == 'CK14' & year == 2016 & season == 'S')
-
-field_metadata %>%
-  filter(health == 'D' & site == 'CK14' & timepoint == '2016_S')
-
-get_subset <- function(h, y_s, s){
-  the_samples <- sample_data(microbiome_data) %>%
-    as_tibble(rownames = 'sample_id') %>%
-    mutate(across(where(is.factor), as.character)) %>%
-    filter(health == h &
-             year == as.numeric(str_extract(y_s, '[0-9]+')) &
-             season == str_extract(y_s, '[A-Za-z]+') &
-             site == s) %>%
-    pull(sample_id)
-  
-  subset_samples(microbiome_data, rownames(sample_data(microbiome_data)) %in% the_samples) %>%
-    estimate_richness(split = FALSE, measures = 'Observed')
-}
-
-select(field_metadata, site, health, timepoint) %>%
-  distinct %>%
-  # separate(timepoint, into = c('year', 'season'), remove = FALSE) %>%
-  # rename_with(str_to_sentence) %>%
-  rowwise %>%
-  mutate(get_subset(h = health, y_s = timepoint, s = site))
-
-
-alpha_metric_analysis <- microbiome_data %>%
-  subset_samples(is.na(tank)) %>%
-  filter_taxa(function (x) {sum(x > 0) > 1}, prune = TRUE) %>%
+alpha_metrics <- microbiome_data %>%
+  # subset_samples(is.na(tank)) %>%
+  # filter_taxa(function (x) {sum(x > 0) > 1}, prune = TRUE) %>%
   # subset_taxa(rownames(tax_table(microbiome_data)) %in% colnames(field_data_cpm)) %>%
   microbiome::alpha(zeroes = FALSE) %>%
-  as_tibble(rownames = 'sample_id') %>%
+  as_tibble(rownames = 'sample_id') 
+write_csv(alpha_metrics, '../intermediate_files/alpha_metrics.csv')
+
+alpha_metric_analysis <- alpha_metrics %>%
   right_join(field_metadata,
              by = 'sample_id') %>%
   select(sample_id, site, health, timepoint, observed, 
@@ -109,6 +85,7 @@ richness_gls <- lme(value ~ health * timepoint,
                                       varIdent(form = ~1|site)))
 
 diag.plots(richness_gls, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
+anova(richness_gls)
 
 ## Shannon ##
 shannon_aov <- lme(value ~ health * timepoint, 

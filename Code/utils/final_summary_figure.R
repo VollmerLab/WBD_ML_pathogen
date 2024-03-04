@@ -49,16 +49,17 @@ asv_rankings <- read_csv('../../Results/asv_importance.csv.gz',
   mutate(asv_id = fct_reorder(asv_id, response, .desc = TRUE)) %>%
   mutate(name = if_else(taxon_level == 'genus', str_c(name, ' sp.'), name),
          name = if_else(taxon_level %in% c('genus', 'species'), str_c('<i>', name, '</i>'), name),
-         name = str_c(name, ' (', asv_id, ')'),
-         taxon_name = case_when(taxon_level == 'family' ~ str_c(order, name, sep = '; '),
+         # name = str_c(name, ' (', asv_id, ')'),
+         name = str_c(asv_id, ' - ', name),
+         taxon_name = case_when(taxon_level == 'family' ~ str_c(name, sep = '; '),
                                  taxon_level == 'order' ~ name,
-                                 TRUE ~ str_c(order, family, name, sep = '; ')),
+                                 TRUE ~ str_c(name, family, sep = '; ')),
          taxon_name = fct_reorder(taxon_name, response, .desc = TRUE))
 
 asv_shaps <- read_csv('../../intermediate_files/model_shaps.csv.gz', show_col_types = FALSE) %>%
   group_by(wflow_id) %>%
   # mutate(across(ends_with('value'), ~scale(.)[,1])) %>%
-  mutate(across(ends_with('shap'), ~scale(.)[,1])) %>%
+  # mutate(across(ends_with('shap'), ~scale(.)[,1])) %>%
   ungroup %>%
   filter(wflow_id %in% model_list) %>%
   pivot_longer(starts_with('ASV'),
@@ -91,9 +92,11 @@ tank_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
   rowwise(asv_id) %>%
   reframe(update(tank_posthoc, side = '=') %>%
             broom::tidy(conf.int = TRUE) %>%
-            select(-p.value),
+            select(-p.value) %>%
+            identity(),
           broom::tidy(tank_posthoc, conf.int = TRUE) %>%
-            select(p.value)) %>%
+          select(p.value)
+          ) %>%
   mutate(asv_id = factor(asv_id, levels = levels(asv_rankings$asv_id))) %>%
   # filter(contrast %in% c('DvH', 'DvN', 'DDvDH', 'DDvNH', 'DHvNH')) %>%
   mutate(contrast = case_when(contrast == 'DvH' ~ 'Outcome',
@@ -104,19 +107,20 @@ tank_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
                               TRUE ~ contrast)) %>%
   left_join(summarise(field_models, all_sig = all(fdr < alpha), .by = asv_id),
             by = 'asv_id') %>%
-  mutate(across(c(estimate, p.value, conf.low, conf.high),
-                ~if_else(!all_sig, NA_real_, .))) %>%
+  # mutate(across(c(estimate, p.value, conf.low, conf.high),
+  #               ~if_else(!all_sig, NA_real_, .))) %>%
   mutate(fdr = p.adjust(p.value, 'fdr'),
-         .by = contrast) %>%
+         .by = c(contrast, all_sig)) %>% #
   left_join(select(asv_rankings, asv_id, taxon_name),
             by = 'asv_id')
 
+#
 #### Ranking Plot ####
 rank_plot <- asv_rankings %>%
   ggplot(aes(x = response, y = taxon_name)) +
   geom_errorbar(aes(xmin = asymp.LCL, xmax = asymp.UCL), width = 0.1) + 
   geom_point() +
-  labs(x = 'Feature Rank',
+  labs(x = 'ASV Rank',
        y = NULL) +
   theme_classic() +
   theme(panel.background = element_rect(colour = 'black'),
@@ -126,6 +130,13 @@ rank_plot <- asv_rankings %>%
 
 #### Shap Plots ####
 shap_plot <- asv_shaps %>%
+  mutate(value = value - min(value), .by = c(asv_id, wflow_id)) %>%
+  mutate(value = if_else(shap < 0, value, -1 * value),
+         value = case_when(value > 10 ~ 10,
+                           value < -10 ~ -10,
+                           TRUE ~ value)) %>%
+  
+  
   # filter(wflow_id == 'base_mlp') %>%
   mutate(health = case_when(health == 'D' ~ 'Diseased',
                             health == 'H' ~ 'Healthy')) %>%
@@ -133,81 +144,110 @@ shap_plot <- asv_shaps %>%
   summarise(shap = mean(shap),
             .groups = 'drop') %>%
   ggplot(aes(y = taxon_name, x = shap, #, shape = health
-             colour = value)) +
+             fill = value)) +
   geom_vline(xintercept = 0, linetype = 'dashed') +
-  geom_quasirandom(aes(group = 1), groupOnX = FALSE, dodge.width = 1) +
-  scale_color_gradient2(midpoint = log(10, base = 2), 
-                        breaks = seq(8, 20, by = 4),
-                        trans = scales::log_trans(base = 2)) +
+  geom_quasirandom(aes(group = 1), groupOnX = FALSE, dodge.width = 1, 
+                   shape = 'circle filled') +
+  scale_fill_gradient2(midpoint = 0, 
+                       high = wesanderson::wes_palette("Zissou1", 2, type = "continuous")[1],
+                       low = wesanderson::wes_palette("Zissou1", 2, type = "continuous")[2],
+                       labels = c('Diseased', '5', '0', '5', 'Healthy')) +
   # guides(shape = guide_legend(override.aes = list(size = 4))) +
-  labs(colour = 'Normalized<br>log<sub>2</sub>(CPM)',
+  labs(fill = 'Normalized<br>log<sub>2</sub>(CPM)',
        shape = 'Disease<br>State',
        y = NULL,
        x = 'SHAP') +
   theme_classic() +
   theme(legend.title = element_markdown(colour = 'black', size = 14),
         legend.text = element_text(colour = 'black', size = 10),
+        legend.key = element_blank(),
         panel.background = element_rect(colour = 'black'),
         axis.text = element_text(colour = 'black', size = 10),
         axis.title = element_text(colour = 'black', size = 14),
         axis.text.y = element_markdown())
 
+#
 #### Field Plot ####
 field_plot <- field_models %>%
   mutate(timepoint = str_replace_all(timepoint, '_', ' '),
-         timepoint_sig = if_else(fdr < alpha, timepoint, NA_character_)) %>%
-  ggplot(aes(y = taxon_name, x = estimate, shape = timepoint,
-             fill = fdr < alpha)) +
-  geom_vline(xintercept = 0, linetype = 'dashed') +
-  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
-                width = 0.1, position = position_dodge(0.5),
-                show.legend = FALSE) + 
-  geom_point(position = position_dodge(0.5)) +
-  scale_fill_manual(values = c('TRUE' = 'black', 'FALSE' = 'white')) +
-  scale_shape_manual(values = c('2016 Jan' = 'square filled', '2016 Jul' = 'diamond filled', 
-                       '2017 Jan' = 'triangle filled', '2017 Jul' = 'triangle down filled')) +
-  guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
-         shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
-  labs(x = 'log<sub>2</sub>(D/H)',
-       y = NULL,
-       shape = 'Time',
-       fill = 'Significance') +
-    theme_classic() +
-    theme(axis.title.x = element_markdown(),
-          legend.title = element_markdown(colour = 'black', size = 14),
-          legend.text = element_text(colour = 'black', size = 10),
-          panel.background = element_rect(colour = 'black'),
-          axis.text = element_text(colour = 'black', size = 10),
-          axis.title = element_text(colour = 'black', size = 14),
-          axis.text.y = element_markdown()) 
-
-#### Tank Plot ####
-tank_plot <- tank_models %>%
-  filter(!contrast %in% c('Outcome', 'PostvPreH', 'DHvNH', 'Post (Diseased / Control)')) %>%
-  mutate(contrast = case_when(contrast == 'Post (Diseased / Healthy)' ~ 'Outcome',
-                              contrast == 'Diseased (Post / Pre)' ~ 'Time',
-                              TRUE ~ contrast),
-         contrast = factor(contrast, levels = c('Time', 'Exposure', 'Outcome')),
-         contrast_sig = if_else(fdr < alpha, contrast, NA_character_),
-         contrast_sig = factor(contrast_sig, levels = levels(contrast))) %>%
-  ggplot(aes(y = taxon_name, x = estimate, colour = contrast,
-             fill = contrast_sig)) +
+         timepoint_sig = if_else(fdr < alpha, timepoint, NA_character_),
+         direction_sig = case_when(fdr > alpha ~ 'Neither',
+                                   estimate > 0 ~ 'Diseased',
+                                   estimate < 0 ~ 'Healthy'), 
+         direction_sig = factor(direction_sig, levels = c('Healthy', 'Neither', 'Diseased')),
+         timepoint = factor(timepoint, levels = c('2017 Jul', '2017 Jan', '2016 Jul', '2016 Jan'))) %>%
+  ggplot(aes(y = taxon_name, x = estimate, #shape = timepoint,
+             fill = direction_sig, group = timepoint)) +
   geom_vline(xintercept = 0, linetype = 'dashed') +
   geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
                 width = 0.1, position = position_dodge(0.5),
                 show.legend = FALSE) + 
   geom_point(position = position_dodge(0.5), shape = 'circle filled') +
-  guides(fill = 'none',
-         colour = guide_legend(override.aes = list(shape = 'circle', size = 4))) +
-  scale_fill_discrete(na.value = 'white') +
-  labs(x = 'log<sub>2</sub>(Contrast)',
+  scale_fill_manual(values = set_names(c('white', wesanderson::wes_palette("Zissou1", 2, type = "continuous")),
+                                       c('Neither', 'Healthy', 'Diseased')),
+                    breaks = c('Healthy', 'Diseased')) +
+  # scale_fill_manual(values = c('TRUE' = 'black', 'FALSE' = 'white')) +
+  # scale_shape_manual(values = c('2016 Jan' = 'square filled', '2016 Jul' = 'diamond filled', 
+  #                      '2017 Jan' = 'triangle filled', '2017 Jul' = 'triangle down filled')) +
+  guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
+         shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
+  labs(x = 'Field log<sub>2</sub>(D/H)',
        y = NULL,
-       colour = 'Contrast',
-       alpha = 'Significance') +
+       shape = 'Time',
+       fill = 'Disease\nAssociation') +
+    theme_classic() +
+    theme(axis.title.x = element_markdown(),
+          legend.title = element_text(colour = 'black', size = 14),
+          legend.text = element_text(colour = 'black', size = 10),
+          legend.key = element_blank(),
+          panel.background = element_rect(colour = 'black'),
+          axis.text = element_text(colour = 'black', size = 10),
+          axis.title = element_text(colour = 'black', size = 14),
+          axis.text.y = element_markdown()) 
+
+
+
+#### Tank Plot ####
+tank_plot <- tank_models %>%
+  filter(!contrast %in% c('Outcome', 'PostvPreH', 'DHvNH', 
+                          'Post (Diseased / Control)',
+                          'Diseased (Post / Pre)')) %>%
+  mutate(contrast = case_when(contrast == 'Post (Diseased / Healthy)' ~ 'Outcome',
+                              contrast == 'Diseased (Post / Pre)' ~ 'Time',
+                              TRUE ~ contrast),
+         contrast = factor(contrast, levels = c('Field', 'Exposure', 'Outcome')),
+         
+         direction_sig = case_when(fdr > alpha ~ 'Neither',
+                                   estimate > 0 ~ 'Diseased',
+                                   estimate < 0 ~ 'Healthy'), 
+         direction_sig = factor(direction_sig, levels = c('Healthy', 'Neither', 'Diseased'))) %>%
+  ggplot(aes(y = taxon_name, x = estimate, shape = contrast,
+             fill = direction_sig)) +
+  geom_vline(xintercept = 0, linetype = 'dashed') +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.1, position = position_dodge(0.5),
+                show.legend = FALSE) + 
+  geom_point(position = position_dodge(0.5), show.legend = TRUE) +
+  guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
+         shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
+  scale_fill_manual(values = set_names(c('white', 
+                                         wesanderson::wes_palette("Zissou1", 2, 
+                                                                  type = "continuous")),
+                                       c('Neither', 'Healthy', 'Diseased')),
+                    breaks = c('Healthy', 'Diseased'), drop = FALSE) +
+  scale_shape_manual(values = c('Field' = 'circle filled', 
+                                'Exposure' = 'square filled', 
+                                'Outcome' = 'diamond filled'), 
+                     drop = FALSE) +
+  labs(x = 'Tank log<sub>2</sub>(D/H)',
+       y = NULL,
+       fill = 'Disease\nAssociation',
+       shape = 'Effect') +
   theme_classic() +
   theme(axis.title.x = element_markdown(),
-        legend.title = element_markdown(colour = 'black', size = 14),
+        legend.title = element_text(colour = 'black', size = 14),
         legend.text = element_text(colour = 'black', size = 10),
+        legend.key = element_blank(),
         panel.background = element_rect(colour = 'black'),
         axis.text = element_text(colour = 'black', size = 10),
         axis.title = element_text(colour = 'black', size = 14),
@@ -217,5 +257,12 @@ tank_plot <- tank_models %>%
 #### Combined Plots ####
 (rank_plot + shap_plot + field_plot + tank_plot) +
   plot_layout(nrow = 1, guides = 'collect', axes = 'collect_y') +
-  plot_annotation(tag_levels = 'A')
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag.position = 'topleft',
+        plot.tag.location = 'panel',
+        plot.tag = element_text(vjust = 5, size = 16),
+        plot.margin = margin(t = 10))
 ggsave('../../Results/overview_results.png', height = 7, width = 12)
+
+
+
