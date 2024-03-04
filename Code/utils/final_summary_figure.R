@@ -4,7 +4,7 @@ library(ggbeeswarm)
 library(ggtext)
 library(patchwork)
 
-alpha <- 0.2
+alpha <- 0.05
 
 #### Functions ####
 top_classification <- function(data, threshold = 80){
