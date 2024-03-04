@@ -523,6 +523,7 @@ ggsave('../Results/important_asvs_field.png', height = 15, width = 15)
 # model<-tank_asv_models$model[[122]]; data <- tank_asv_models$data[[122]]; field_fitted <- tank_asv_models$all_health_fit[[122]]
 
 plot_prePost <- function(model, data, field_fitted){
+  real_zero <- min(data$log2_cpm_norm)
   initial_emmean <- emmeans(model, ~time_treat)
   treatment_levels <- levels(initial_emmean)$time_treat
   
@@ -547,6 +548,8 @@ plot_prePost <- function(model, data, field_fitted){
                               season == 'W' ~ 'Jan'),
            timepoint = if_else(is.na(year), 'Tank', str_c(year, season, sep = '_'))) %>%
     
+    # mutate(across(c(estimate, conf.low, conf.high), ~. - real_zero)) %>%
+    
     
     ggplot(aes(x = prePost, y = estimate, colour = health, shape = exposure)) +
     # geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
@@ -557,7 +560,7 @@ plot_prePost <- function(model, data, field_fitted){
     geom_point(position = position_dodge2(0.5), size = 5) +
     # scale_shape_manual(values = c('D' = 'circle filled', 'N' = 'triangle filled'), 
     #                    na.value = 'square filled') +
-    scale_shape_manual(values = c('Disease' = 'circle', 'Control' = 'triangle', 'Field' = 'square')) +
+    scale_shape_manual(values = c('Disease' = 'diamond', 'Control' = 'square', 'Field' = 'circle')) +
     scale_colour_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
                                            c('Healthy', 'Diseased')))
   
@@ -707,6 +710,7 @@ classified_plots <- tank_asv_models %>%
                        theme(panel.background = element_rect(colour = 'black'),
                              axis.text = element_text(colour = 'black', size = 12),
                              legend.text = element_text(colour = 'black', size = 12),
+                             legend.key = element_blank(),
                              axis.title.y = element_markdown(colour = 'black', size = 18),
                              legend.title = element_text(colour = 'black', size = 14),
                              axis.text.x = element_text(colour = 'black', size = 12)))) %>%
