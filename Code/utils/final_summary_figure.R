@@ -101,8 +101,8 @@ tank_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
                               TRUE ~ contrast)) %>%
   left_join(summarise(field_models, all_sig = all(fdr < alpha), .by = asv_id),
             by = 'asv_id') %>%
-  # mutate(across(c(estimate, p.value, conf.low, conf.high),
-  #               ~if_else(!all_sig, NA_real_, .))) %>%
+  mutate(across(c(estimate, p.value, conf.low, conf.high),
+                ~if_else(!all_sig, NA_real_, .))) %>%
   mutate(fdr = p.adjust(p.value, 'fdr'),
          .by = c(contrast, all_sig)) %>% #
   left_join(select(asv_rankings, asv_id, taxon_name),
@@ -261,7 +261,7 @@ tank_plot <- tank_models %>%
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16),
         plot.margin = margin(t = 10))
-ggsave('../../Results/overview_results.png', height = 7, width = 12)
+ggsave('../../Results/overview_results_jdsPreference.png', height = 7, width = 12)
 
 
 
