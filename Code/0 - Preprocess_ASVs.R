@@ -4,6 +4,7 @@ library(tidyverse)
 library(magrittr)
 library(phyloseq)
 library(microbiome)
+library(taxize)
 library(metagMisc)
 library(edgeR)
 library(ggvenn)
@@ -29,6 +30,21 @@ filter_missingness <- function(data, prop_missing){
   data[keep, keep.lib.sizes = FALSE]
 }
 
+top_classification <- function(data, threshold = 80){
+  rename_with(data, .cols = domain:species,
+              ~str_c(., '_name')) %>%
+    pivot_longer(cols = -asv_id,
+                 names_to = c('taxon_level', '.value'),
+                 names_pattern = '(.*)_(.*)') %>%
+    mutate(taxon_level = factor(taxon_level, ordered = TRUE,
+                                levels = c('domain', 'phylum', 'class', 'order', 'family', 'genus', 'species'))) %>%
+    filter(confidence >= threshold) %>%
+    select(-confidence) %>%
+    pivot_wider(names_from = taxon_level, 
+                values_from = 'name')
+}
+
+
 #### Data ####
 microbiome_raw <- read_rds("../Data/field_tank_newPS_deciphersilva.rds") 
 
@@ -50,18 +66,77 @@ microbiome_data <- microbiome_raw %>%
 Biostrings::writeXStringSet(file="../intermediate_files/all_asvs.fasta", refseq(microbiome_data))
 #http://www2.decipher.codes/ClassifyOrganisms.html
 
-new_taxonomy <- read_csv('../intermediate_files/update_taxonomy.csv', show_col_types = FALSE) %>% 
-  select(-ends_with('confidence'))
+new_taxonomy <- read_csv('../intermediate_files/update_taxonomy.csv', show_col_types = FALSE) %>%
+  top_classification() 
+
 old_taxonomy <- tax_table(microbiome_data) %>%
   as.data.frame %>%
   as_tibble(rownames = 'asv_id')
 
-updated_taxonomy <- filter(new_taxonomy, is.na(species)) %>%
-  select(-domain:-species) %>%
-  left_join(old_taxonomy, by = 'asv_id') %>%
-  bind_rows(filter(new_taxonomy, !is.na(species)))
 
-tax_table(microbiome_data) <- column_to_rownames(updated_taxonomy, 'asv_id') %>% as.matrix
+updated_taxonomy <- bind_rows(new_taxonomy,
+                              filter(old_taxonomy, !asv_id %in% new_taxonomy$asv_id))
+
+# taxonomy <- reconciled_higher_taxonomy; lowest_level = 'genus'
+synonomize_taxonomy <- function(taxonomy, lowest_level = 'genus'){
+  all_levels <- c('domain', 'phylum', 'class', 'order', 'family', 'genus', 'species', 'asv_id')
+  remove_levels <- all_levels[(which(all_levels == lowest_level) + 1):length(all_levels)]
+  
+  duplicated_higher_taxonomy <- select(taxonomy, -asv_id, -all_of(remove_levels)) %>%
+    distinct %>%
+    filter(!is.na(!!sym(lowest_level))) %>%
+    group_by(!!sym(lowest_level)) %>%
+    filter(n() > 1) %>%
+    arrange(!!sym(lowest_level)) %>%
+    pull(!!sym(lowest_level)) %>%
+    unique
+  
+  if(lowest_level == 'species'){
+    genus_species_mismatch <- select(taxonomy, -asv_id, -all_of(remove_levels)) %>%
+      distinct %>%
+      filter(!is.na(!!sym(lowest_level))) %>%
+      filter(!str_detect(species, genus)) %>%
+      pull(species) %>%
+      unique %>%
+      sort
+    
+    duplicated_higher_taxonomy <- unique(c(duplicated_higher_taxonomy, genus_species_mismatch))
+  }
+  
+  if(length(duplicated_higher_taxonomy) > 0){
+    update_classification <- classification(duplicated_higher_taxonomy, db = 'ncbi')
+    
+    refresh_taxa <- tibble(!!sym(lowest_level) := names(update_classification)) %>%
+      mutate(row = row_number()) %>%
+      rowwise(!!sym(lowest_level)) %>%
+      reframe(update_classification[[row]]) %>%
+      filter(rank %in% all_levels,
+             rank != lowest_level) %>%
+      select(-id) %>%
+      pivot_wider(names_from = rank, 
+                  values_from = name) %>%
+      mutate(domain = 'Bacteria')
+    
+    
+    
+    out <- filter(taxonomy, !(!!sym(lowest_level) %in% refresh_taxa[[lowest_level]])) %>%
+      bind_rows(filter(taxonomy, !!sym(lowest_level) %in% refresh_taxa[[lowest_level]]) %>%
+                  select(asv_id, !!sym(lowest_level), all_of(remove_levels)) %>%
+                  left_join(refresh_taxa, by = lowest_level))
+  } else {
+    out <- taxonomy
+  }
+  out
+}
+
+reconciled_higher_taxonomy <- synonomize_taxonomy(updated_taxonomy, 'species') %>%
+  synonomize_taxonomy('genus') %>%
+  synonomize_taxonomy('family') %>%
+  synonomize_taxonomy('order') %>%
+  synonomize_taxonomy('class') %>%
+  synonomize_taxonomy('phylum') 
+
+tax_table(microbiome_data) <- column_to_rownames(reconciled_higher_taxonomy, 'asv_id') %>% as.matrix
 
 metadata <- sample_data(microbiome_data) %>%
   as_tibble(rownames = 'sample_id') %>%

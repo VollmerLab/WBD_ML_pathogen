@@ -378,10 +378,10 @@ rank_plot <- function(asv_ranks){
     pivot_longer(cols = -any_of(c('asv_id', 'median_rank', 'median_shap', 'statistic', 
                                   'p.value', 'p_adjust', 'method', 'alternative'))) %>%
     
-    
+    # filter(asv_id == 'ASV15') %>%
     left_join(taxonomy, by = 'asv_id') %>%
-    mutate(higher_taxonomy = str_c(family, genus, asv_id, sep = '; ') %>%
-             str_remove('; NA')) %>%
+    mutate(higher_taxonomy = str_c(order, family, genus, asv_id, sep = '; ') %>%
+             str_remove('(; NA)+')) %>%
 
     mutate(higher_taxonomy = fct_reorder(higher_taxonomy, value, 
                                          .desc = if_else(direction == 'less', TRUE, FALSE))) %>%
@@ -420,8 +420,8 @@ model_important_asvs <- individual_shap_values %>%
   mutate(asv_rank = rank(-shap_importance)) %>%
   ungroup %>%
   left_join(taxonomy, by = 'asv_id') %>%
-  mutate(higher_taxonomy = str_c(family, genus, sep = '; ') %>%
-           str_remove('; NA')) %>%
+  mutate(higher_taxonomy = str_c(order, family, genus, sep = '; ') %>%
+           str_remove('(; NA)+')) %>%
   select(wflow_id, asv_id, shap_importance, asv_rank, higher_taxonomy)
 write_csv(model_important_asvs, '../intermediate_files/model_shaps_importance.csv.gz')
 

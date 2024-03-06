@@ -205,6 +205,7 @@ field_plot <- field_models %>%
 
 
 #### Tank Plot ####
+#Maybe have untested as grey - maybe make them blank
 tank_plot <- tank_models %>%
   filter(!contrast %in% c('Outcome', 'PostvPreH', 'DHvNH', 
                           'Post (Diseased / Control)',
@@ -214,21 +215,26 @@ tank_plot <- tank_models %>%
                               TRUE ~ contrast),
          contrast = factor(contrast, levels = rev(c('Exposure', 'Outcome', 'Field'))),
          
-         direction_sig = case_when(fdr > alpha ~ 'Neither',
+         direction_sig = case_when(!all_sig ~ 'Untested',
+                                   fdr > alpha ~ 'Neither',
                                    estimate > 0 ~ 'Diseased',
                                    estimate < 0 ~ 'Healthy'), 
-         direction_sig = factor(direction_sig, levels = c('Healthy', 'Neither', 'Diseased'))) %>%
-  ggplot(aes(y = taxon_name, x = estimate, shape = contrast,
+         direction_sig = factor(direction_sig, levels = c('Healthy', 'Neither', 'Diseased', 
+                                                          'Untested'))) %>%
+  ggplot(aes(y = taxon_name, x = estimate, shape = contrast, #
              fill = direction_sig)) +
   geom_vline(xintercept = 0, linetype = 'dashed') +
   geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
                 width = 0.1, position = position_dodge(0.5),
                 show.legend = FALSE) + 
   geom_point(position = position_dodge(0.5), show.legend = TRUE) +
+  geom_label(aes(x = 0, label = if_else(is.na(estimate), 'nt', NA_character_)),
+             fill = alpha('white', 0.5), label.size = NA) +
+  
   guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
          shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
   scale_x_continuous(limits = c(-7, 12), breaks = c(-5, 0, 5)) +
-  scale_fill_manual(values = set_names(c('white', 
+  scale_fill_manual(values = set_names(c('white', #'grey50',
                                          wesanderson::wes_palette("Zissou1", 2, 
                                                                   type = "continuous")),
                                        c('Neither', 'Healthy', 'Diseased')),
@@ -261,7 +267,7 @@ tank_plot <- tank_models %>%
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16),
         plot.margin = margin(t = 10))
-ggsave('../../Results/overview_results_jdsPreference.png', height = 7, width = 12)
+ggsave('../../Results/overview_results.png', height = 7, width = 12)
 
 
 

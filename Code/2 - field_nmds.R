@@ -1,3 +1,5 @@
+library(multcomp)
+library(multcompView)
 library(tidyverse)
 library(magrittr)
 library(patchwork)
@@ -27,11 +29,11 @@ if(!file.exists('../intermediate_files/taxonomy.csv.gz')){
 
 field_metadata <- read_csv('../intermediate_files/normalized_field_asv_counts.csv', 
                            show_col_types = FALSE) %>%
-  select(sample_id, year, season, site, health) %>%
+  select(sample_id, year, season, site, health, lib.size) %>%
   distinct %>%
   mutate(timepoint = str_c(year, season, sep = '_'),
          across(where(is.character), as.factor)) %>%
-  select(sample_id, site, health, timepoint)
+  select(sample_id, site, health, timepoint, lib.size)
 
 #### Alpha Diversity Metrics ####
 microbiome_data <- read_rds("../intermediate_files/prepped_microbiome.rds.gz")
@@ -53,7 +55,7 @@ write_csv(alpha_metrics, '../intermediate_files/alpha_metrics.csv')
 alpha_metric_analysis <- alpha_metrics %>%
   right_join(field_metadata,
              by = 'sample_id') %>%
-  select(sample_id, site, health, timepoint, observed, 
+  select(sample_id, site, health, timepoint, lib.size, observed, 
          diversity_shannon, diversity_inverse_simpson) %>%
   rename(richness = observed) %>%
   pivot_longer(cols = c(richness, diversity_shannon, diversity_inverse_simpson),
@@ -71,10 +73,11 @@ library(nlme)
 library(emmeans)
 source('~/R/R Functions/diagPlots.R')
 ## Richness ##
-richness_aov <- lme(value ~ health * timepoint, 
+richness_aov <- lme(value ~ health * timepoint * lib.size, 
                     random = ~1 | site,
                     data = alpha_metric_analysis$data[[3]])
 diag.plots(richness_aov, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
+
 
 #Fix site/timepoint variance
 richness_gls <- lme(value ~ health * timepoint, 
@@ -85,7 +88,21 @@ richness_gls <- lme(value ~ health * timepoint,
                                       varIdent(form = ~1|site)))
 
 diag.plots(richness_gls, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
-anova(richness_gls)
+car::Anova(richness_gls, type = '2')
+
+write_csv(alpha_metric_analysis$data[[3]], '~/../Desktop/test_data.csv')
+
+#Try log 
+richness_gls_sqrt <- lme(sqrt_value ~ health * timepoint, 
+                    random = ~1 | site, 
+                    data = alpha_metric_analysis$data[[3]],
+                    weights = varComb(varIdent(form = ~1|health), 
+                                      varIdent(form = ~1|timepoint), 
+                                      varIdent(form = ~1|site)))
+diag.plots(richness_gls_sqrt, col.nos = c(2:4), data = alpha_metric_analysis$data[[3]])
+anova(richness_gls_sqrt)
+car::Anova(richness_gls_sqrt, type = '2')
+
 
 ## Shannon ##
 shannon_aov <- lme(value ~ health * timepoint, 
@@ -102,8 +119,6 @@ shannon_gls <- lme(value ~ health * timepoint,
 
 diag.plots(shannon_gls, col.nos = c(2:4), data = alpha_metric_analysis$data[[2]])
 
-lmerTest::lmer(value ~ health + (1 | site) + (1 | timepoint),
-               data = alpha_metric_analysis$data[[2]]) %>% anova(ddf = 'Kenward-Roger')
 
 #Best is no transformation
 
@@ -127,20 +142,23 @@ lmerTest::lmer(value ~ health * timepoint + (1 | site),
                data = alpha_metric_analysis$data[[1]]) %>% anova(ddf = 'Kenward-Roger')
 
 #### Plot/Outputs ####
+as_tibble(car::Anova(simpson_gls_log, type = '2'), rownames = 'term')
+
 bind_rows(
-  richness = as_tibble(anova(richness_gls, type = 'marginal'), rownames = 'term'),
-  shannon = as_tibble(anova(shannon_gls, type = 'marginal'), rownames = 'term'),
-  simpson = as_tibble(anova(simpson_gls_log, type = 'marginal'), rownames = 'term'),
+  richness = as_tibble(car::Anova(richness_gls_sqrt, type = '2'), rownames = 'term'),
+  shannon = as_tibble(car::Anova(shannon_gls, type = '2'), rownames = 'term'),
+  simpson = as_tibble(car::Anova(simpson_gls_log, type = '2'), rownames = 'term'),
   .id = 'metric'
 ) %>%
-  mutate(`F-value` = sprintf(`F-value`, fmt = '%#.3f'),
-         `p-value` = scales::pvalue(`p-value`)) %>%
+  mutate(`Chisq` = sprintf(Chisq, fmt = '%#.3f'),
+         `p-value` = scales::pvalue(`Pr(>Chisq)`),
+         .keep = 'unused') %>%
   filter(term != '(Intercept)') %>%
   write_csv('../Results/table2_alpha_diversity_anova.csv')
 
 
 significant_metrics <- bind_rows(
-  Richness = emmeans(richness_gls, ~health | timepoint) %>%
+  Richness = emmeans(richness_gls_sqrt, ~health | timepoint) %>%
     contrast('pairwise') %>%
     as_tibble(),
   
@@ -160,12 +178,41 @@ significant_metrics <- bind_rows(
          timepoint = ymd(str_c(timepoint, '1', sep = '-'))) %>%
   select(metric, timepoint)
 
+significant_metrics_time <- bind_rows(
+  Richness = emmeans(richness_gls_sqrt, ~timepoint) %>%
+    cld(Letters = LETTERS) %>%
+    as_tibble(),
+  
+  Shannon = emmeans(shannon_gls, ~timepoint) %>%
+    cld(Letters = LETTERS) %>%
+    as_tibble(),
+  
+  `Inverse Simpson` = emmeans(simpson_gls_log, ~timepoint) %>%
+    cld(Letters = LETTERS) %>%
+    as_tibble(),
+  
+  .id = 'metric'
+) %>%
+  mutate(timepoint = str_replace_all(timepoint, c('S' = 'July', 'W' = 'Jan')),
+         timepoint = str_replace_all(timepoint, '_', '-'),
+         timepoint = ymd(str_c(timepoint, '1', sep = '-')),
+         .group = str_trim(.group)) %>%
+  select(metric, timepoint, .group)
 
 
+
+ref_grid(richness_gls_sqrt) %>%
+  update(tran = poisson(link = 'sqrt')) %>%
+  regrid(transform = 'response') %>%
+  emmeans(~health) %>%
+  contrast('pairwise')
 
 bind_rows(
-  Richness = emmeans(richness_gls, ~health | timepoint) %>%
-    as_tibble(),
+  Richness = ref_grid(richness_gls_sqrt) %>%
+    update(tran = poisson(link = 'sqrt')) %>%
+    emmeans(~health | timepoint, type = 'response') %>%
+    as_tibble() %>%
+    rename(emmean = response),
   
   `Shannon` = emmeans(shannon_gls, ~health | timepoint) %>%
     as_tibble(),
@@ -207,10 +254,62 @@ bind_rows(
         axis.text = element_text(colour = 'black', size = 12),
         axis.title = element_text(colour = 'black', size = 14),
         panel.background = element_rect(colour = 'black'),
+        legend.key = element_blank(),
         # legend.position = c(0.9, 0.9),
         legend.title = element_text(colour = 'black', size = 14),
         legend.text = element_text(colour = 'black', size = 12))
 ggsave('../Results/Fig3_alpha_diversity.png', height = 7, width = 7)
+
+
+bind_rows(
+  Richness = ref_grid(richness_gls_sqrt) %>%
+    update(tran = poisson(link = 'sqrt')) %>%
+    emmeans(~timepoint, type = 'response') %>%
+    as_tibble() %>%
+    rename(emmean = response),
+  
+  `Shannon` = emmeans(shannon_gls, ~timepoint) %>%
+    as_tibble(),
+  
+  `Inverse Simpson` = ref_grid(simpson_gls_log) %>%
+    update(tran = poisson(link = 'log')) %>%
+    emmeans(~timepoint, type = 'response') %>%
+    as_tibble() %>%
+    rename(emmean = response),
+  
+  .id = 'metric'
+) %>%
+  mutate(timepoint = str_replace_all(timepoint, c('S' = 'July', 'W' = 'Jan')),
+         timepoint = str_replace_all(timepoint, '_', '-'),
+         timepoint = ymd(str_c(timepoint, '1', sep = '-'))) %>% filter(timepoint == ymd('2017-07-01'))
+  left_join(significant_metrics_time, by = c('timepoint', 'metric')) %>%
+  ggplot(aes(x = timepoint, y = emmean, ymin = lower.CL, ymax = upper.CL)) +
+  geom_pointrange(position = position_dodge2(50)) +
+  geom_text(aes(x = timepoint, y = Inf, label = .group), 
+            size = 10, inherit.aes = FALSE,
+            vjust = 1) +
+  scale_colour_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
+                                         c('Healthy', 'Diseased'))) +
+  # facet_wrap(~metric, scales = 'free_y')
+  scale_x_date(breaks = ymd(c('2016-01-01', '2016-07-01', 
+                              '2017-01-01', '2017-07-01')), 
+               date_labels = '%Y\n%b') +
+  facet_grid(metric ~ ., scales = 'free_y', 
+             switch = 'y') +
+  labs(x = NULL,
+       y = NULL,
+       colour = 'Disease\nState') +
+  theme_classic() +
+  theme(strip.placement = 'outside',
+        strip.background = element_blank(),
+        strip.text = element_text(colour = 'black', size = 14),
+        axis.text = element_text(colour = 'black', size = 12),
+        axis.title = element_text(colour = 'black', size = 14),
+        panel.background = element_rect(colour = 'black'),
+        legend.key = element_blank(),
+        # legend.position = c(0.9, 0.9),
+        legend.title = element_text(colour = 'black', size = 14),
+        legend.text = element_text(colour = 'black', size = 12))
 
 
 #### PERMANOVA ####

@@ -1,3 +1,4 @@
+#CHECK OTHER FILL
 # cpm ~ (control-healthyEnd, disease-healthyEnd, disease-diseaseEnd) * dosed/not 
 
 #### Libraries ####
@@ -64,6 +65,10 @@ fixed_models <- field_data %>%
   ungroup
 
 
+#### Full Taxonomy Genera ####
+n_genera <- ungroup(field_data) %>%
+  count(genus)
+
 #### Make Plot ####
 colour_options <- read_rds('../intermediate_files/asv_colors.rds')
 microbe_colors <- set_names(colour_options$color_palette$hex,
@@ -71,14 +76,15 @@ microbe_colors <- set_names(colour_options$color_palette$hex,
 levels(colour_options$asv_clumping$Top_order)
 
 base_plot_data <- select(fixed_models, -where(is.list)) %>%
-  left_join(colour_options$asv_clumping,
+  left_join(mutate(colour_options$asv_clumping,
+                   genus = str_remove_all(genus, '\\<i\\>|\\</i\\>')),
             by = c('order', 'genus')) %>%
   mutate(group = case_when(!is.na(group) ~ group,
                            is.na(group) & order == 'Oceanospirillales' ~ 'Oceanospirillales-Other',
-                           is.na(group) & order == 'Rhodobacterales' ~ 'Rhodobacterales-Other',
-                           is.na(group) & order == 'Alteromonadales' ~ 'Alteromonadales-Other',
-                           is.na(group) & order == 'Thiotrichales' ~ 'Thiotrichales-Other',
                            is.na(group) & order == 'Vibrionales' ~ 'Vibrionales-Other',
+                           is.na(group) & order == 'Alteromonadales' ~ 'Alteromonadales-Other',
+                           is.na(group) & order == 'Verrucomicrobiales' ~ 'Verrucomicrobiales-Other',
+                           is.na(group) & order == 'Campylobacterales' ~ 'Campylobacterales-Other',
                            TRUE ~ 'Other-Other'),
          group = factor(group, levels = levels(colour_options$asv_clumping$group))) %>%
   # filter(!is.na(group)) %>%
@@ -99,14 +105,20 @@ base_plot_data <- select(fixed_models, -where(is.list)) %>%
   #                            asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51') ~ 'Opportunist',
   #                            TRUE ~ top_asv)) %>%
   left_join(ml_classifications,
-            by = 'asv_id') %>%
-  mutate(type = if_else(is.na(type), NA_character_, 'ML'))
+            by = 'asv_id') %>% 
+  mutate(type = if_else(is.na(type), 'no', 'yes')) %>%
+  # mutate(type = case_when(is.na(type) ~ 'no',
+  #                         type == 'Pathogen' ~ 'Pathogen',
+  #                         TRUE ~ 'yes')) %>%
+  identity()
 
 
 base_plot <- base_plot_data %>%
-  filter(!if_all(where(is.logical), ~!.)) %>%
+  # filter(!if_all(where(is.logical), ~!.)) %>%
   mutate(Time = Time | `Disease State x Time`, .keep = 'unused') %>%
   filter(`Disease Associated` | `Healthy Associated`) %>%
+  rename(Disease = `Disease Associated`,
+         Healthy = `Healthy Associated`) %>%
   # relocate(Time, .after = `Disease State x Time`) %>%
   # select(-Time) %>%
   
@@ -119,8 +131,9 @@ base_plot <- base_plot_data %>%
           ) + 
             # scale_fill_manual(values = c('yes' = 'red', 'no' = '#595959', 
             #                              'Pathogen' = 'orange', 'Opportunist' = 'green')) +
-            scale_fill_discrete(na.value = '#595959') +
-            theme(legend.position = 'left')
+            scale_fill_manual(values = c('no' = 'gray65', 'yes' = 'gray25')) +
+            # scale_fill_manual(values = c('yes' = 'gray', 'no' = '#595959', 'Pathogen' = 'red')) +
+            theme(legend.position = 'none')
         ),
         annotations = list(
           'Order' = ggplot(mapping = aes(fill = the_colour)) +
@@ -131,7 +144,7 @@ base_plot <- base_plot_data %>%
         ),
         
         set_sizes=(
-          upset_set_size() + 
+          upset_set_size(geom=geom_bar(fill = 'gray65')) + 
             geom_text(aes(label = after_stat(count)), hjust = 0, stat = 'count', colour = 'white') +
           # + annotate(geom='text', label='@', x='Drama', y=850, color='white', size=3) +
             # expand_limits(y = 200) +
@@ -142,9 +155,11 @@ base_plot <- base_plot_data %>%
         name = NULL
   )
 
-legend_space <- plot_grid(colour_options$legend, NULL, nrow = 2)
 
-plot_grid(base_plot, colour_options$legend, rel_widths = c(1, .25))
+
+plot_grid(base_plot, 
+          cowplot::plot_grid(NULL, colour_options$legend, NULL, ncol = 1, rel_heights = c(0.1, 1, 0.4)), 
+          rel_widths = c(1, .25))
 ggsave('../Results/Fig5_traditional_complexUpset.png', 
        height = 12, width = 10, bg = 'white')
 
@@ -167,10 +182,17 @@ select(fixed_models, -where(is.list)) %>%
 
 #### Composition Analysis ####
 tst_data <- base_plot_data %>%
+  
+  filter(!if_all(where(is.logical), ~!.)) %>%
+  mutate(Time = Time | `Disease State x Time`, .keep = 'unused') %>%
+  filter(`Disease Associated` | `Healthy Associated`) %>%
+  select(-Time) %>%
+
   group_by(across(c(genus, where(is.logical)))) %>%
   summarise(n = n_distinct(asv_id),
             .groups = 'drop') %>%
   rowwise %>%
+  
   mutate(allFalse = all(!c_across(where(is.logical)))) %>%
   ungroup %>%
   mutate(row_id = row_number()) %>%
@@ -183,21 +205,21 @@ tst_data <- base_plot_data %>%
             .groups = 'drop') %>%
   select(-row_id) 
 
-tst_data <- tst_data %>%
-  mutate(new_intersection = case_when(intersection == 'allFalse' ~ 'allFalse',
-                                      intersection == 'Sampling Time' ~ 'Sampling Time',
-                                      str_detect(intersection, 'Health State \\(Healthy\\)') ~ 'healthy',
-                                      str_detect(intersection, 'Health State \\(Diseased\\)') ~ 'disease',
-                                      TRUE ~ intersection)) %>%
-  group_by(genus, new_intersection) %>%
-  summarise(n = sum(n), 
-            .groups = 'drop')
+# tst_data <- tst_data %>%
+#   mutate(new_intersection = case_when(intersection == 'allFalse' ~ 'allFalse',
+#                                       intersection == 'Sampling Time' ~ 'Sampling Time',
+#                                       str_detect(intersection, 'Health State \\(Healthy\\)') ~ 'healthy',
+#                                       str_detect(intersection, 'Health State \\(Diseased\\)') ~ 'disease',
+#                                       TRUE ~ intersection)) %>%
+#   group_by(genus, new_intersection) %>%
+#   summarise(n = sum(n), 
+#             .groups = 'drop')
 
 tst_data %>%
   filter(genus != 'NA') %>%
-  filter(sum(n) > 5, .by = 'genus') %>%
-  filter(sum(n) > 7, .by = 'new_intersection') %>%
-  pivot_wider(names_from = 'new_intersection',
+  # filter(sum(n) > 5, .by = 'genus') %>%
+  # filter(sum(n) > 7, .by = 'intersection') %>%
+  pivot_wider(names_from = 'intersection',
               values_from = 'n',
               values_fill = 0L) %>%
   column_to_rownames('genus') %>%
@@ -217,19 +239,22 @@ row_fisher <- function(x, k, m, N, direction = 'two.sided'){
 tst_data %>%
   filter(genus != 'NA') %>%
   rename(n_asv = n) %>%
-  mutate(n_genus = sum(n_asv), .by = 'genus') %>%
-  mutate(n_intersect = sum(n_asv), .by = 'new_intersection') %>%
-  mutate(total = sum(n_asv)) %>%
+  # mutate(n_genus = sum(n_asv), .by = 'genus') %>%
+  left_join(rename(n_genera, n_genus = n),
+            by = 'genus') %>%
+  mutate(n_intersect = sum(n_asv), .by = 'intersection') %>%
+  mutate(total = sum(n_genera$n)) %>%
   
-  filter(sum(n_asv) > 5, .by = 'genus') %>%
-  filter(sum(n_asv) > 7, .by = 'new_intersection') %>%
-  rowwise %>%
+  # filter(sum(n_asv) > 5, .by = 'genus') %>%
+  filter(n_genus > 5) %>%
+  filter(sum(n_asv) > 7, .by = 'intersection') %>%
+  rowwise() %>%
   mutate(row_fisher(n_asv, n_genus, n_intersect, total, direction = 'greater')) %>%
   ungroup %>%
   # group_by(new_intersection) %>%
   # mutate(p_adj = p.adjust(p.value, 'fdr')) %>%
   filter(p.value < 0.05) %>%
-  select(genus, new_intersection, estimate, p.value)
+  select(genus, intersection, n_asv, n_genus, estimate, p.value)
 
 
 ######### EXPERIMENTAL ########
