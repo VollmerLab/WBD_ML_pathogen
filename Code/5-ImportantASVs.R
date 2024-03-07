@@ -744,7 +744,7 @@ classified_plots <- tank_asv_models %>%
   theme(plot.tag = element_text(face = 'bold', size = 22)) 
   
 classified_plots
-ggsave('../Results/Fig10_important_asvs.png', height = 15, width = 15)
+ggsave('../Results/Fig6_important_asvs.png', height = 15, width = 15)
 
 
 #### Stats for paper ####

@@ -14,7 +14,8 @@ top_classification <- function(data, threshold = 80){
                  names_to = c('taxon_level', '.value'),
                  names_pattern = '(.*)_(.*)') %>%
     mutate(taxon_level = factor(taxon_level, ordered = TRUE,
-                                levels = c('domain', 'phylum', 'class', 'order', 'family', 'genus', 'species'))) %>%
+                                levels = c('domain', 'phylum', 'class', 'order', 
+                                           'family', 'genus', 'species'))) %>%
     filter(confidence >= threshold) %>%
     group_by(asv_id) %>%
     filter(taxon_level == max(taxon_level)) %>%
@@ -27,14 +28,17 @@ top_classification <- function(data, threshold = 80){
 taxonomy <- read_csv('../../intermediate_files/update_taxonomy.csv',
                      show_col_types = FALSE) %>%
   top_classification() %>%
+  left_join(read_csv('../../intermediate_files/update_taxonomy.csv',
+                     show_col_types = FALSE) %>%
+              select(asv_id, ends_with('confidence')),
+            by = 'asv_id') %>%
   bind_rows(read_csv('../../intermediate_files/taxonomy.csv.gz', show_col_types = FALSE) %>%
               filter(asv_id == 'ASV131') %>%
               mutate(name = genus,
                      taxon_level = 'genus'))
+  
 
-
-
-
+  
 model_list <- read_csv('../../Results/equivilant_top_models.csv.gz',
                        show_col_types = FALSE) %>%
   filter(pract_equiv >= 0.8) %>%
@@ -110,21 +114,75 @@ tank_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz') %>%
 
 #
 #### Ranking Plot ####
+count(asv_rankings, genus)
+
 rank_plot <- asv_rankings %>%
-  ggplot(aes(x = response, y = taxon_name, fill = p_adjust < alpha)) +
+  ggplot(aes(x = response, y = taxon_name, fill = p_adjust < alpha)) + #
   geom_errorbar(aes(xmin = asymp.LCL, xmax = asymp.UCL), width = 0.1) + 
+  geom_point(data = . %>%
+               select(asv_id, taxon_name, starts_with('base')) %>%
+               pivot_longer(cols = starts_with('base'),
+                            names_to = 'model',
+                            values_to = 'rank',
+                            names_prefix = 'base_'),
+             aes(x = rank, colour = model), fill = 'black',
+             position = position_jitter(height = 0.2, width = 2.5),
+             size = 1) +
   geom_point(shape = 'circle filled') +
   scale_fill_manual(values = c('TRUE' = 'black', 'FALSE' = 'white')) +
-  guides(fill = 'none') +
+  scale_colour_discrete(labels = c('forest' = 'RF', 
+                                 'lasso' = 'LASSO',
+                                 'mlp' = 'MLP',
+                                 'svmLinear' = 'SVM'),
+                        breaks = c('mlp', 'svmLinear',
+                                   'lasso', 'forest')) +
+  scale_x_continuous(breaks = c(0, 25, 50, 75)) +
+  guides(fill = 'none',
+         colour = guide_legend(override.aes = list(size = 4))) +
   labs(x = 'ASV Rank',
-       y = NULL) +
+       y = NULL,
+       colour = 'ML Model') +
   theme_classic() +
-  theme(panel.background = element_rect(colour = 'black'),
+  theme(legend.title = element_markdown(colour = 'black', size = 14),
+        legend.text = element_text(colour = 'black', size = 10),
+        legend.key = element_blank(),
+        panel.background = element_rect(colour = 'black'),
         axis.text = element_text(colour = 'black', size = 10),
         axis.title = element_text(colour = 'black', size = 14),
         axis.text.y = element_markdown())
 
 #### Shap Plots ####
+shap_associations <- asv_shaps %>%
+  group_by(sample_id, asv_id, health, value, taxon_name) %>%
+  summarise(shap = mean(shap),
+            .groups = 'drop') %>%
+  group_by(asv_id) %>%
+  reframe(broom::tidy(lm(shap ~ value))) %>%
+  filter(term != '(Intercept)') %>%
+  arrange(desc(asv_id)) %>%
+  mutate(disease_associated = estimate > 0) %>%
+  select(asv_id, disease_associated)
+
+count(shap_associations, disease_associated)
+
+shap_associations %>%
+  mutate(association = if_else(disease_associated, 'Disease', 'Healthy'), 
+         .keep = 'unused') %>%
+  left_join(taxonomy, by = 'asv_id') %>%
+  select(-taxon_level:-confidence) %>%
+  select(-contains('domain'), -contains('phylum'), -contains('class')) %>%
+  rename_with(.cols = c(order:species), ~str_c(., '_name')) %>%
+  pivot_longer(cols = -c(asv_id, association),
+               names_to = c('taxon_level', '.value'),
+               names_pattern = '(.*)_(.*)') %>%
+  mutate(name = str_c(name, ' (', str_replace_na(scales::percent(confidence, scale = 1)), ')'),
+         .keep = 'unused') %>%
+  pivot_wider(names_from = taxon_level,
+              values_from = name) %>%
+  rename(shap_assocation = association) %>%
+  write_csv('../../Results/shap_assications.csv')
+    
+
 shap_plot <- asv_shaps %>%
   mutate(value = value - min(value), .by = c(asv_id, wflow_id)) %>%
   # filter(wflow_id == 'base_mlp') %>%
@@ -267,7 +325,7 @@ tank_plot <- tank_models %>%
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16),
         plot.margin = margin(t = 10))
-ggsave('../../Results/overview_results.png', height = 7, width = 12)
+ggsave('../../Results/Fig5_overview_results.png', height = 7, width = 12)
 
 
 

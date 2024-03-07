@@ -80,8 +80,65 @@ ranking_similarities <- asv_ranks %>%
   # dplyr::select(-method, -alternative) %>%
   ungroup
 
+#### Model Similarities ####
+ranking_similarities %>%
+  select(model.1, model.2, rbo, rbo_p, tau, tau_p) %>%
+  
+  filter(!model.1 %in% c('knn', 'pls', 'median'),
+         !model.2 %in% c('knn', 'pls', 'median')) %>%
+  
+  filter(model.1 > model.2) %>%
+  filter(!model.1 %in% c('model'),
+         !model.2 %in% c('model')) %>%
+  filter(model.1 != 'null',
+         model.2 != 'null') %>%
+  summarise(across(c(rbo, tau), c(~mean(.), ~sd(.) / sqrt(n()))))
+
+ranking_similarities %>%
+  select(model.1, model.2, rbo, rbo_p, tau, tau_p) %>%
+  
+  filter(!model.1 %in% c('knn', 'pls', 'median'),
+         !model.2 %in% c('knn', 'pls', 'median')) %>%
+  
+  filter(model.1 > model.2) %>%
+  filter(model.1 %in% c('model', 'null')) %>%
+  group_by(model.1) %>%
+  summarise(across(c(rbo, tau), c(~mean(.), ~sd(.) / sqrt(n()))))
 
 
+test_rankings <- ranking_similarities %>%
+  select(model.1, model.2, rbo, rbo_p, tau, tau_p) %>%
+  
+  filter(!model.1 %in% c('knn', 'pls', 'median'),
+         !model.2 %in% c('knn', 'pls', 'median'),
+         model.1 != model.2) %>%
+  
+  filter(model.1 %in% c('null', 'model') | 
+           (model.1 > model.2 & 
+              !model.1 %in% c('null', 'model') &
+              !model.2 %in% c('null', 'model'))) %>%
+  filter(!(model.1 == 'model' & model.2 == 'null' | model.1 == 'null' & model.2 == 'model')) %>%
+  mutate(grouping = case_when(model.1 %in% c('null', 'model') ~ model.1,
+                              TRUE ~ 'ML')) %>%
+  mutate(tau = if_else(tau < 0, 1/100, tau))
+
+library(betareg)
+library(emmeans)
+rbo_beta <- betareg(rbo ~ grouping, data = test_rankings)
+car::Anova(rbo_beta)
+
+emmeans(rbo_beta, ~grouping) %T>%
+  print %>%
+  contrast('pairwise')
+
+tau_beta <- betareg(tau ~ grouping, data = test_rankings)
+car::Anova(tau_beta)
+
+emmeans(tau_beta, ~grouping) %T>%
+  print %>%
+  contrast('pairwise')
+
+#### Plot clustering ####
 ranking_similarities %>%
   select(model.1, model.2, rbo) %>%
   filter(!model.1 %in% c('model', 'median'),
@@ -97,7 +154,7 @@ ranking_similarities %>%
   as.dist() %>%
   hclust()  %>%
   ggdendrogram(rotate = TRUE, size = 2)
-ggsave('../../Results/Fig7_model_similarity.png', height = 5, width = 5)
+ggsave('../../Results/model_similarity.png', height = 5, width = 5)
 
 ranking_similarities %>%
   select(model.1, model.2, tau) %>%

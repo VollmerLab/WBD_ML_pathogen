@@ -65,6 +65,7 @@ fixed_models <- field_data %>%
   ungroup
 
 
+
 #### Full Taxonomy Genera ####
 n_genera <- ungroup(field_data) %>%
   count(genus)
@@ -112,11 +113,16 @@ base_plot_data <- select(fixed_models, -where(is.list)) %>%
   #                         TRUE ~ 'yes')) %>%
   identity()
 
+base_plot_data %>%
+  filter(`Healthy Associated`) %>%
+  count(genus) %>%
+  filter(genus != 'NA')
+
 
 base_plot <- base_plot_data %>%
   # filter(!if_all(where(is.logical), ~!.)) %>%
   mutate(Time = Time | `Disease State x Time`, .keep = 'unused') %>%
-  filter(`Disease Associated` | `Healthy Associated`) %>%
+  # filter(`Disease Associated` | `Healthy Associated`) %>%
   rename(Disease = `Disease Associated`,
          Healthy = `Healthy Associated`) %>%
   # relocate(Time, .after = `Disease State x Time`) %>%
@@ -151,6 +157,13 @@ base_plot <- base_plot_data %>%
             theme(axis.text.x = element_text(angle = 0))
         ), 
         # min_size = 10,
+        sort_intersections=FALSE,
+        intersections=list(c('Healthy', 'Time'),
+                           'Healthy',
+                           c('Disease', 'Time'),
+                           'Disease',
+                           'Time',
+                           'Outside of known sets'),
         sort_sets = FALSE, 
         name = NULL
   )
@@ -160,7 +173,7 @@ base_plot <- base_plot_data %>%
 plot_grid(base_plot, 
           cowplot::plot_grid(NULL, colour_options$legend, NULL, ncol = 1, rel_heights = c(0.1, 1, 0.4)), 
           rel_widths = c(1, .25))
-ggsave('../Results/Fig5_traditional_complexUpset.png', 
+ggsave('../Results/Fig4_traditional_complexUpset.png', 
        height = 12, width = 10, bg = 'white')
 
 

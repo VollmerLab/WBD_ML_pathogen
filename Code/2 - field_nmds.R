@@ -258,7 +258,7 @@ bind_rows(
         # legend.position = c(0.9, 0.9),
         legend.title = element_text(colour = 'black', size = 14),
         legend.text = element_text(colour = 'black', size = 12))
-ggsave('../Results/Fig3_alpha_diversity.png', height = 7, width = 7)
+ggsave('../Results/alpha_diversity.png', height = 7, width = 7)
 
 
 bind_rows(
@@ -428,7 +428,7 @@ colony_points_nmds %>%
         strip.text = element_text(colour = 'black', size = 14),
         axis.title = element_text(colour = 'black', size = 14),
         axis.text = element_text(colour = 'black', size = 10))
-ggsave('../Results/Fig4_NMDS_field.png', height = 7, width = 7)
+ggsave('../Results/Fig3_NMDS_field.png', height = 7, width = 7)
 
 colony_points_nmds %>% 
   ggplot(aes(x = NMDS1, y = NMDS2)) +

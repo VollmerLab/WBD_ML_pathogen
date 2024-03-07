@@ -235,12 +235,32 @@ unique_asvs <- asv_data %>%
   unique()
 
 
-#### Plot Microbial Diversity ####
+#### Data ####
 microbiome_data <- read_rds('../intermediate_files/prepped_microbiome.rds.gz') %>%
   prune_samples(sample_data(.) %>% rownames %in% unique(asv_data$sample_id), .) 
 
 
-# tax_table(microbiome_data) <- column_to_rownames(updated_taxonomy, 'asv_id') %>% as.matrix
+#### Counts ####
+tax_table(microbiome_data) %>%
+  as.data.frame %>%
+  as_tibble(rownames = 'asv_id') %>%
+  count(class) %>%
+  filter(!is.na(class))
+
+tax_table(microbiome_data) %>%
+  as.data.frame %>%
+  as_tibble(rownames = 'asv_id') %>%
+  count(order) %>%
+  filter(!is.na(order))
+
+tax_table(microbiome_data) %>%
+  as.data.frame %>%
+  as_tibble(rownames = 'asv_id') %>%
+  count(family) %>%
+  filter(!is.na(family))
+
+#### Plot Microbial Diversity ####
+
 
 # data <- microbiome_data
 # grouping_levels <- c('dataset', 'year', 'season', 'health')

@@ -199,6 +199,15 @@ model_data_2 <- bocas_temp %>%
   mutate(days_since = as.numeric(date - peak_date),
          timepoint = as.character(timepoint))
 
+# cyclical_temp_plot +
+#   geom_rect(xmin = ymd('2000-04-01'), xmax = ymd('2000-06-30'),
+#             ymax = Inf, ymin = -Inf, alpha = 0.5) +
+#   geom_rect(xmin = ymd('2000-09-01'), xmax = ymd('2000-11-30'),
+#             ymax = Inf, ymin = -Inf, alpha = 0.5) +
+#   geom_vline(xintercept = ymd(c('2000-05-15', '2000-10-15')),
+#              colour = 'red')
+  
+
 #### Analysis of Acerv Density ####
 acerv_model_random <-  glmer(cbind(n_acerv, total_meters - n_acerv) ~ 
                               timepoint + (1 | site), 
@@ -219,6 +228,17 @@ acerv_significance_groupings <- glht(acerv_model_random,
   mutate(.group = str_to_upper(.group))
 
 
+emmeans(acerv_model_random, ~timepoint, 
+        type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  left_join(count(prevelance_data, timepoint, date, site, season, year) %>%
+              group_by(timepoint, season, year) %>%
+              summarise(date = median(date),
+                        .groups = 'drop'),
+            by = c('timepoint')) %>%
+  select(date, prob, std.error, conf.low, conf.high)
+
+
 abundance_plot <- emmeans(acerv_model_random, ~timepoint, 
                           type = 'response') %>%
   # cld(Letters = LETTERS, adjust = 'none') %>%
@@ -236,7 +256,7 @@ abundance_plot <- emmeans(acerv_model_random, ~timepoint,
   #            aes(y = n_wbd / n_acerv)) +
   geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
   geom_text(aes(y = Inf, label = .group), vjust = 1.5) +
-  # scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 1)) +
   scale_x_date(breaks = ymd(c('2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
@@ -289,6 +309,16 @@ significance_groupings <- glht(full_model_random,
   enframe(name = 'timepoint', value = '.group') %>%
   mutate(.group = str_to_upper(.group))
 
+
+emmeans(full_model_random, ~timepoint, 
+        type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  left_join(count(prevelance_data, timepoint, date, site, season, year) %>%
+              group_by(timepoint, season, year) %>%
+              summarise(date = median(date),
+                        .groups = 'drop'),
+            by = c('timepoint')) %>%
+  select(date, prob, std.error, conf.low, conf.high)
 
 prevelance_plot <- emmeans(full_model_random, ~timepoint, 
                            type = 'response') %>%
