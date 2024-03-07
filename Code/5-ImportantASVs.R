@@ -19,9 +19,6 @@ alpha <- 0.05
 rerun_models <- FALSE
 
 #### Data ####
-the_nmds <- read_rds('../intermediate_files/field_tank_nmds.rds.gz')
-asv_fit <- read_rds('../intermediate_files/field_tank_asvArrows.rds.gz')
-
 model_list <- read_csv('../Results/equivilant_top_models.csv.gz',
                        show_col_types = FALSE) %>%
   filter(pract_equiv >= 0.95) %>%
@@ -72,188 +69,6 @@ tank_asv_data %>%
   count(geno, time) %>%
   pivot_wider(names_from = time, values_from = n)
 
-#### NMDS ####
-species_fits <- scores(the_nmds)$species %>%
-  as_tibble(rownames = 'asv_id') %>%
-  left_join(tibble(asv_id = names(asv_fit$vectors$r),
-                   r2 = asv_fit$vectors$r,
-                   p = asv_fit$vectors$pvals),
-            by = 'asv_id') %>%
-  left_join(taxonomy, by = 'asv_id') %>%
-  mutate(useful = str_c(family, genus, asv_id, sep = '_') %>%
-           str_replace_all('__', '_')) %>% 
-  filter(family %in% unique(shap_importance$family)) %>%
-  mutate(important_asv = asv_id %in% unique(shap_importance$asv_id)) %>%
-  identity()
-  
-
-species_fits %>%
-  arrange(important_asv) %>%
-  ggplot(aes(x = NMDS1, y = NMDS2)) +
-  geom_segment(aes(colour = important_asv),
-               xend = 0, yend = 0, show.legend = FALSE) +
-  geom_point(aes(colour = important_asv, size = important_asv)) +
-  geom_point(data = scores(the_nmds)$sites %>%
-               as_tibble(rownames = 'sample_id') %>%
-               left_join(select(field_data, sample_id, health) %>%
-                           distinct(),
-                         by = 'sample_id'),
-             aes(fill = health),
-             size = 2, shape = 21) +
-  geom_text(data = . %>% filter(important_asv),
-            aes(label = useful), show.legend = FALSE) +
-  facet_wrap(~family) +
-  scale_colour_manual(values = c('TRUE' = 'black', 'FALSE' = 'grey50')) +
-  scale_size_manual(values = c('TRUE' = 5, 'FALSE' = 1)) +
-  guides(fill = guide_legend(override.aes = list(shape = 21)),
-         shape = guide_legend(override.aes = list(fill = 'black')),
-         size = 'none') +
-  labs(colour = 'ASV Importance',
-       fill = 'Health State') +
-  theme_classic() +
-  theme(strip.background = element_blank(),
-        panel.background = element_rect(colour = 'black'))
-ggsave('../Results/nmds_important_asvs.png', height = 15, width = 15)
-
-#### Correlation Among Important ASVs ####
-sig_correlated_asvs <- field_data %>%
-  filter(asv_id %in% shap_importance$asv_id,
-         health == 'D') %>%
-  select(asv_id, sample_id, log2_cpm_norm) %>%
-  full_join(., ., by = 'sample_id',
-            relationship = "many-to-many") %>%
-  filter(asv_id.x > asv_id.y) %>%
-  group_by(asv_id.x, asv_id.y) %>%
-  summarise(broom::tidy(cor.test(log2_cpm_norm.x, log2_cpm_norm.y)),
-            .groups = 'drop') %>%
-  mutate(p_adj = p.adjust(p.value, method = 'fdr')) 
-
-
-sig_correlated_asvs %>%
-  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
-  arrange(-estimate)
-
-
-sig_correlated_asvs %>%
-  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25')%>%
-  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8')
-
-
-field_data %>%
-  filter(asv_id %in% shap_importance$asv_id,
-         health == 'D') %>%
-  select(asv_id, sample_id, log2_cpm_norm) %>%
-  full_join(., ., by = 'sample_id',
-            relationship = "many-to-many") %>%
-  filter(asv_id.x > asv_id.y) %>%
-  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
-  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8') %>%
-  filter(log2_cpm_norm.y > min(log2_cpm_norm.y),
-         log2_cpm_norm.x > min(log2_cpm_norm.x)) %>%
-  summarise(broom::tidy(cor.test(log2_cpm_norm.x, log2_cpm_norm.y, method = 'spearman')),
-            .groups = 'drop') 
-  # 
-  # ggplot(aes(x = log2_cpm_norm.x, y = log2_cpm_norm.y)) +
-  # geom_point()
-
-
-field_data %>%
-  filter(asv_id %in% shap_importance$asv_id) %>%
-  select(asv_id, sample_id, log2_cpm_norm, health) %>%
-  full_join(., ., by = c('sample_id', 'health'),
-            relationship = "many-to-many") %>%
-  filter(asv_id.x > asv_id.y) %>%
-  filter(asv_id.x == 'ASV25' | asv_id.y == 'ASV25') %>%
-  filter(asv_id.x == 'ASV8' | asv_id.y == 'ASV8') %>%
-  mutate(across(starts_with('log2'), ~. > min(.))) %>%
-  count(health, log2_cpm_norm.x, log2_cpm_norm.y) %>%
-  rename(ASV8 = log2_cpm_norm.x,
-         ASV25 = log2_cpm_norm.y) %>%
-  mutate(same_different = case_when(ASV8 & ASV25 ~ 'both',
-                                    !ASV8 & !ASV25 ~ 'neither',
-                                    ASV25 ~ 'only_ASV25',
-                                    ASV8 ~ 'only_ASV8')) %>%
-  group_by(health, same_different) %>%
-  summarise(n = sum(n), .groups = 'drop') %>%
-  pivot_wider(names_from = same_different,
-              values_from = 'n') %>%
-  relocate(neither, .after = only_ASV8) %>%
-  column_to_rownames('health') %>%
-  select(-both, -neither) %T>%
-  print %>%
-  chisq.test()
-#When only one or the other is present ASV25 is more associated with field samples with disease
-
-#### Pathogen Counting ####
-pathogen_counts <- filter(field_data, asv_id %in% str_c('ASV', c(8, 25, 38))) %>%
-  select(asv_id, sample_id, log2_cpm_norm, health) %>%
-  pivot_wider(names_from = asv_id, values_from = log2_cpm_norm) %>%
-  mutate(across(starts_with('ASV'), ~. > min(.)),
-         combination = case_when(ASV8 & !ASV25 & !ASV38 ~ 'only8',
-                                 !ASV8 & ASV25 & !ASV38 ~ 'only25',
-                                 !ASV8 & !ASV25 & ASV38 ~ 'only38',
-                                 
-                                 ASV8 & ASV25 & !ASV38 ~ 'both_8_25',
-                                 ASV8 & !ASV25 & ASV38 ~ 'both_8_38',
-                                 !ASV8 & ASV25 & ASV38 ~ 'both_25_38',
-                                 
-                                 !ASV8 & !ASV25 & !ASV38 ~ 'none',
-                                 ASV8 & ASV25 & ASV38 ~ 'all',
-                                 
-                                 TRUE ~ 'other')) %>%
-  count(health, combination) %>%
-  pivot_wider(names_from = combination,
-              values_from = n,
-              values_fill = 0) 
-
-
-select(pathogen_counts, -starts_with('both'))
-column_to_rownames(pathogen_counts, 'health')
-
-column_to_rownames(pathogen_counts, 'health') %>%
-  apply(1, sum)
-
-select(pathogen_counts, health, all, none) %>%
-  column_to_rownames('health') %T>%
-  print %>%
-  chisq.test(simulate.p.value = FALSE)
-
-select(pathogen_counts, health, starts_with('only')) %>%
-  column_to_rownames('health') %T>%
-  print %>%
-  chisq.test(simulate.p.value = FALSE)
-
-select(pathogen_counts, health, all, none, starts_with('only')) %>%
-  column_to_rownames('health') %T>%
-  print %>%
-  # fisher.test(simulate.p.value = FALSE)
-  chisq.posthoc.test()
-
-
-select(pathogen_counts, health, starts_with('both')) %>%
-  column_to_rownames('health') %T>%
-  print %>%
-  fisher.test(simulate.p.value = FALSE)
-
-
-select(pathogen_counts, health, starts_with('only'), starts_with('both')) %>%
-  pivot_longer(cols = -health,
-               names_to = 'asv',
-               values_to = 'number') %>%
-  mutate(asv = str_remove(asv, 'only'),
-         asv = str_remove(asv, 'both_'),
-         asv = str_split(asv, '_')) %>%
-  unnest(asv) %>%
-  group_by(health, asv) %>%
-  summarise(n = sum(number),
-            .groups = 'drop') %>%
-  pivot_wider(names_from = asv,
-              values_from = n,
-              names_prefix = 'asv') %>%
-  column_to_rownames('health') %T>%
-  print %>%
-  chisq.test(simulate.p.value = FALSE)
-  # chisq.posthoc.test()
 
 #### Model ASVs in Field ####
 # model <- field_asv_models$model[[1]]
@@ -603,7 +418,9 @@ tank_posthocs <- function(model){
                                                 TRUE ~ 0))
   
   posthoc_sided <- contrast(initial_emmean, all_contrasts, side = '>', adjust = 'none')
-  full_posthoc <- contrast(initial_emmean, all_contrasts, side = '=', adjust = 'none') %>%
+  base_posthoc <- contrast(initial_emmean, all_contrasts, side = '=', adjust = 'none')
+  
+  full_posthoc <- base_posthoc %>%
     broom::tidy(conf.int = TRUE) %>%
     select(contrast, estimate, std.error, conf.low, conf.high) %>%
     left_join(broom::tidy(posthoc_sided) %>%
@@ -613,7 +430,9 @@ tank_posthocs <- function(model){
   select(full_posthoc, contrast, estimate, p.value) %>%
     rename(fc = estimate, pvalue = p.value) %>%
     pivot_wider(names_from = contrast, values_from = c(fc, pvalue)) %>%
-    mutate(tank_posthoc = list(full_posthoc))
+    mutate(tank_posthoc = list(full_posthoc),
+           tank_emmeans = list(base_posthoc),
+           tank_directional_emmeans = list(posthoc_sided))
 }
 
 cluster_copy(cluster, c('plot_prePost', 'tank_posthocs'))
@@ -747,33 +566,7 @@ classified_plots
 ggsave('../Results/Fig6_important_asvs.png', height = 15, width = 15)
 
 
-#### Stats for paper ####
-tank_asv_models %>%
-  filter(asv_id %in% shap_importance$asv_id) %>%
-  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
-  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
-  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
-  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
-  # filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
-  filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
-  select(asv_id, pvalue_PostvPreD, pvalue_DvN, pvalue_DDvDH)
 
-tank_asv_models %>%
-  filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
-  select(asv_id, tank_posthoc) %>%
-  rowwise(asv_id) %>%
-  reframe(update(tank_posthoc, type = 'response') %>%
-            as_tibble()) %>%
-  filter(contrast %in% c('PostvPreD', 'DvN', 'DDvDH'))
-
-tank_asv_models %>%
-  filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
-  select(asv_id, tank_posthoc) %>%
-  rowwise(asv_id) %>%
-  reframe(update(tank_posthoc, type = 'response') %>%
-            as_tibble()) %>%
-  filter(contrast %in% c('PostvPreD', 'DvN', 'DDvDH')) %>%
-  arrange(contrast)
 
 #### P/A % plots ####
 raw_pa_data <- tank_asv_models %>%

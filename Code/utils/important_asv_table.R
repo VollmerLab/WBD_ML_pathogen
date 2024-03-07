@@ -195,6 +195,33 @@ asv_table <- select(ml_model_out, phylum:species,
 
 write_csv(asv_table, '../../Results/Table45_asv_table.csv')  
 
+#### Stats for paper ####
+tank_asv_models <- read_rds('../../intermediate_files/tank_asv_models.rds.gz')
+tank_asv_models %>%
+  filter(asv_id %in% asv_table$ID) %>%
+  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
+  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
+  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
+  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
+  # filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
+  # filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
+  # filter(asv_id %in% c('ASV40')) %>%
+  filter(asv_id %in% c('ASV108')) %>%
+  select(asv_id, pvalue_PostvPreD, pvalue_DvN, pvalue_DDvDH)
+
+tank_asv_models %>%
+  # filter(asv_id %in% c('ASV25', 'ASV8', 'ASV38')) %>%
+  # filter(asv_id %in% c('ASV26', 'ASV30', 'ASV361', 'ASV51')) %>%
+  # filter(asv_id %in% c('ASV40')) %>%
+  filter(asv_id %in% c('ASV108')) %>%
+  select(asv_id, tank_emmeans) %>%
+  rowwise(asv_id) %>%
+  reframe(update(tank_emmeans, tran = 'log2', type = 'response') %>%
+            as_tibble()) %>%
+  filter(contrast %in% c('PostvPreD', 'DvN', 'DDvDH'))
+
+
+
 
 
 #### Random Numbers ####
