@@ -165,23 +165,26 @@ shap_associations <- asv_shaps %>%
 
 count(shap_associations, disease_associated)
 
-shap_associations %>%
-  mutate(association = if_else(disease_associated, 'Disease', 'Healthy'), 
-         .keep = 'unused') %>%
-  left_join(taxonomy, by = 'asv_id') %>%
-  select(-taxon_level:-confidence) %>%
-  select(-contains('domain'), -contains('phylum'), -contains('class')) %>%
-  rename_with(.cols = c(order:species), ~str_c(., '_name')) %>%
-  pivot_longer(cols = -c(asv_id, association),
-               names_to = c('taxon_level', '.value'),
-               names_pattern = '(.*)_(.*)') %>%
-  mutate(name = str_c(name, ' (', str_replace_na(scales::percent(confidence, scale = 1)), ')'),
-         .keep = 'unused') %>%
-  pivot_wider(names_from = taxon_level,
-              values_from = name) %>%
-  rename(shap_assocation = association) %>%
-  write_csv('../../Results/shap_assications.csv')
-    
+if(!file.exists('../../Results/shap_assications.csv')){
+  shap_associations %>%
+    mutate(association = if_else(disease_associated, 'Disease', 'Healthy'), 
+           .keep = 'unused') %>%
+    left_join(taxonomy, by = 'asv_id') %>%
+    select(-taxon_level:-confidence) %>%
+    select(-contains('domain'), -contains('phylum'), -contains('class')) %>%
+    rename_with(.cols = c(order:species), ~str_c(., '_name')) %>%
+    pivot_longer(cols = -c(asv_id, association),
+                 names_to = c('taxon_level', '.value'),
+                 names_pattern = '(.*)_(.*)') %>%
+    mutate(name = str_c(name, ' (', str_replace_na(scales::percent(confidence, scale = 1)), ')'),
+           .keep = 'unused') %>%
+    pivot_wider(names_from = taxon_level,
+                values_from = name) %>%
+    rename(shap_assocation = association) %>%
+    write_csv('../../Results/shap_assications.csv')
+  
+}
+
 
 shap_plot <- asv_shaps %>%
   mutate(value = value - min(value), .by = c(asv_id, wflow_id)) %>%
@@ -324,8 +327,9 @@ tank_plot <- tank_models %>%
   theme(plot.tag.position = 'topleft',
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16),
-        plot.margin = margin(t = 10))
-ggsave('../../Results/Fig5_overview_results.png', height = 7, width = 12)
+        plot.margin = margin(t = 10),
+        panel.grid.major.y = element_line(colour = 'black', linetype = 'dashed'))
+ggsave('../../Results/Fig5_overview_results_lines.png', height = 7, width = 12)
 
 
 
