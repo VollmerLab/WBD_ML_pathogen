@@ -52,6 +52,13 @@ pathogen_counts <- pivot_wider(field_data,
               values_fill = 0) 
 
 
+pathogen_counts %>%
+  pivot_longer(cols = -health) %>%
+  mutate(prop = value / sum(value), .by = name) %>%
+  select(-value) %>%
+  filter(health == 'D') %>%
+  pivot_wider(values_from = prop)
+
 select(pathogen_counts, -starts_with('both'))
 
 column_to_rownames(pathogen_counts, 'health') %>%

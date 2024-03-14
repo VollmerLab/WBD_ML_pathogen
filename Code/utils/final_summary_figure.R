@@ -45,6 +45,8 @@ model_list <- read_csv('../../Results/equivilant_top_models.csv.gz',
   rename(wflow_id = model) %>%
   pull(wflow_id)
 
+
+
 asv_rankings <- read_csv('../../Results/asv_importance.csv.gz',
                             show_col_types = FALSE) %>%
   filter(p_adjust < alpha) %>%
@@ -52,14 +54,35 @@ asv_rankings <- read_csv('../../Results/asv_importance.csv.gz',
   select(asv_id, all_of(model_list), response, SE, starts_with('asymp'), p_adjust) %>%
   left_join(taxonomy, by = 'asv_id') %>%
   mutate(asv_id = fct_reorder(asv_id, response, .desc = TRUE)) %>%
+  
+  mutate(type = case_when(asv_id %in% str_c('ASV', c(25, 38, 8)) ~ 'pathogen',
+                          asv_id == 'ASV40' ~ 'beneficial',
+                          asv_id %in% str_c('ASV', c(26, 30, 361, 51)) ~ 'opportunist',
+                          TRUE ~ 'none'),
+         colour = case_when(type %in% c('pathogen') ~ 'red', #'opportunist'
+                            type == 'beneficial' ~ 'blue',
+                            TRUE ~ 'black'),
+         face = case_when(type %in% c('pathogen', 'beneficial', 'opportunist') ~ 'bold',
+                          TRUE ~ 'plain')) %>%
+  
+  # select(asv_id, response, taxon_level, family, name, colour, face) %>%
+  
   mutate(name = if_else(taxon_level == 'genus', str_c(name, ' sp.'), name),
          name = if_else(taxon_level %in% c('genus', 'species'), str_c('<i>', name, '</i>'), name),
          # name = str_c(name, ' (', asv_id, ')'),
          name = str_c(asv_id, ' - ', name),
          taxon_name = case_when(taxon_level == 'family' ~ str_c(name, sep = '; '),
                                  taxon_level == 'order' ~ name,
-                                 TRUE ~ str_c(name, family, sep = '; ')),
-         taxon_name = fct_reorder(taxon_name, response, .desc = TRUE)) %>%
+                                 TRUE ~ str_c(name, family, sep = '; '))) %>%
+  
+  mutate(taxon_name = case_when(face == 'bold' ~ str_c('__', taxon_name, '__'),
+                                TRUE ~ taxon_name),
+         taxon_name = case_when(colour == 'red' ~ str_c("<span style='color:#F21A00'>", taxon_name, "</span>"),
+                                colour == 'blue' ~ str_c("<span style='color:#3B9AB2'>", taxon_name, "</span>"),
+                                TRUE ~ taxon_name)) %>%
+  
+  mutate(taxon_name = fct_reorder(taxon_name, response, .desc = TRUE)) %>%
+  
   filter(!is.na(taxon_name))
 
 asv_shaps <- read_csv('../../intermediate_files/model_shaps.csv.gz', show_col_types = FALSE) %>%
@@ -328,8 +351,8 @@ tank_plot <- tank_models %>%
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16),
         plot.margin = margin(t = 10),
-        panel.grid.major.y = element_line(colour = 'black', linetype = 'dashed'))
-ggsave('../../Results/Fig5_overview_results_lines.png', height = 7, width = 12)
+        panel.grid.major.y = element_line(colour = 'black', linetype = 'dotted'))
+ggsave('../../Results/Fig5_overview_results.png', height = 7, width = 12)
 
 
 

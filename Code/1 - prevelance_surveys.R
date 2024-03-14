@@ -111,22 +111,29 @@ bocas_temp %>%
          date <= max(prevelance_data$date)) %>%
   summary
 
-ylim.prim <- c(27, 32) #temperature min/max
-ylim.sec <- c(0, 9.5) #dhw min/max
+ylim.prim <- c(30, 31.33) #temperature min/max
+ylim.sec <- c(0, 12) #dhw min/max
 b <- diff(ylim.prim) / diff(ylim.sec)
 a <- ylim.prim[1] - b * ylim.sec[1]
 
 temp_plot <- bocas_temp %>%
   filter(date >= min(prevelance_data$date) - months(3),
-         date <= max(prevelance_data$date)) %>%
+         date <= max(prevelance_data$date)) %>% 
   
   ggplot(aes(x = date)) +
   geom_hline(yintercept = 30, linetype = 'dashed') +
+  # geom_vline(data = select(prevelance_data, date, timepoint) %>%
+  #              distinct %>%
+  #              group_by(timepoint) %>%
+  #              summarise(date = median(date)) %>%
+  #              select(date),
+  #            aes(xintercept = date), linetype = 'dotdash') +
   geom_line(aes(y = water_temp), colour = 'black') +
-  geom_line(aes(y = a + dhw*b), colour = 'red') +
+  geom_line(aes(y = a + dhw*b), colour = '#F21A00') +
   scale_y_continuous(name = "Temperature (Celsius °)",
                      sec.axis = sec_axis(~ (. - a) / b, 
-                                         name = 'DHW (°C-weeks)')) + 
+                                         name = 'DHW',
+                                         breaks = c(0, 4, 8, 12))) + 
   scale_x_date(breaks = ymd(c('2015-01-01', '2015-07-01', 
                               '2016-01-01', '2016-07-01', 
                               '2017-01-01', '2017-07-01')), 
@@ -135,9 +142,12 @@ temp_plot <- bocas_temp %>%
   theme_classic() +
   theme(axis.title = element_text(colour = 'black', size = 14),
         axis.text = element_text(colour = 'black', size = 10),
-        panel.background = element_rect(colour = 'black'))
+        panel.background = element_rect(colour = 'black'),
+        axis.title.y.right = element_text(hjust = 0.15, colour = '#F21A00'),
+        axis.text.y.right = element_text(colour = '#F21A00'),
+        axis.ticks.y.right = element_line(colour = '#F21A00'))
 
-
+#
 #### Cyclic Temperature Plot ####
 cyclical_temp_plot <- bocas_temp %>%
   mutate(month = month(date),
@@ -482,8 +492,6 @@ temp_association_coral <- emmeans(acerv_model_random, ~timepoint,
 
 
 #### Make Merged Plot ####
-
-
 (temp_plot + #labs(y = 'Mean Daily Temperature (°C)') + 
    theme(axis.text.x = element_blank())) / 
   # (dhw_plot + theme(axis.text.x = element_blank())) /
