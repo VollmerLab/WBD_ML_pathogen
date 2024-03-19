@@ -4,15 +4,15 @@ library(tidyverse)
 alpha <- 0.05
 
 #### Data ####
-taxonomy <- read_csv('../intermediate_files/taxonomy.csv.gz',
+taxonomy <- read_csv('../../intermediate_files/taxonomy.csv.gz',
                      show_col_types = FALSE) %>%
   mutate(across(where(is.character), 
                 ~str_replace_na(., replacement = '')))
 
-field_data <- read_csv('../intermediate_files/normalized_field_asv_counts.csv', 
+field_data <- read_csv('../../intermediate_files/normalized_field_asv_counts.csv', 
                        show_col_types = FALSE)
 
-shap_importance <- read_csv('../Results/asv_importance.csv.gz',
+shap_importance <- read_csv('../../Results/asv_importance.csv.gz',
                             show_col_types = FALSE) %>%
   filter(p_adjust < alpha) %>%
   left_join(taxonomy, by = 'asv_id') %>%

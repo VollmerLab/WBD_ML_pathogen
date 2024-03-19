@@ -33,6 +33,15 @@ write_lines(str_c('AY', 323132:323197),
 Copy to https://www.ncbi.nlm.nih.gov/sites/batchentrez
 Download and rename to `pantos_2006.fasta`
 
+(Sweet et al 2014) - KC736995-KC737047 - Acerv - Unknown??
+```
+R
+write_lines(paste0('KC', 736995:737047),
+            '../../intermediate_files/sweet_2014.txt')
+```
+Copy to https://www.ncbi.nlm.nih.gov/sites/batchentrez
+Download and rename to `sweet_2014.fasta`
+
 ## Merge fastqs
 gw_2017
 ```
@@ -68,5 +77,10 @@ singularity exec --bind /work,/scratch,/tmp ${BLCA} \
 singularity exec --bind /work,/scratch,/tmp ${BLCA} \
   2.blca_main.py \
   -i trytten_unpub.fasta \
+  -p ${SLURM_CPUS_PER_TASK}
+
+singularity exec --bind /work,/scratch,/tmp ${BLCA} \
+  2.blca_main.py \
+  -i sweet_2014.fasta \
   -p ${SLURM_CPUS_PER_TASK}
 ```

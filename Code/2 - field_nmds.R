@@ -38,11 +38,30 @@ field_metadata <- read_csv('../intermediate_files/normalized_field_asv_counts.cs
 #### Alpha Diversity Metrics ####
 microbiome_data <- read_rds("../intermediate_files/prepped_microbiome.rds.gz")
 
-# raw_counts <- otu_table(microbiome_data) %>%
-#   as.data.frame %>%
-#   as_tibble(rownames = 'sample_id') %>%
-#   mutate(the_asvs = cbind(across(starts_with('ASV'))),
-#          .keep = 'unused')
+raw_counts <- otu_table(microbiome_data) %>%
+  as.data.frame %>%
+  as_tibble(rownames = 'sample_id') %>%
+  mutate(the_asvs = cbind(across(starts_with('ASV'))),
+         .keep = 'unused')
+
+raw_counts %>%
+  summarise(the_asvs = apply(the_asvs, 2, sum) %>%
+              t)
+
+tst <- left_join(field_metadata,
+          raw_counts,
+          by = 'sample_id') %>%
+  group_by(health) %>%
+  summarise(n = n_distinct(sample_id),
+            lib.size = sum(lib.size),
+            the_asvs = apply(the_asvs, 2, sum) %>%
+              t,
+            .groups = 'drop') %>%
+  mutate(richness = rowSums(the_asvs > 0), 
+         .keep = 'unused')
+
+ggplot(tst, aes(x = timepoint, y = richness, colour = health)) +
+  geom_boxplot()
 
 alpha_metrics <- microbiome_data %>%
   # subset_samples(is.na(tank)) %>%

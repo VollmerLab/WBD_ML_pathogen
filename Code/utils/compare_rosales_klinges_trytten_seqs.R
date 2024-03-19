@@ -97,6 +97,9 @@ trytten_asvs <- read_csv('../../../Emily_Microbiome/intermediate_files/classifie
   pull(asv_id) %>%
   str_c('FL_', .)
 
+sweet_asvs <- str_c('sweet_',
+                    c('KC737024', 'KC737026', 'KC737032'))
+
 #### Taxonomy Data ####
 panama_taxonomy <- read_blca('../../intermediate_files/all_asvs.fasta.blca.out') %>%
   mutate(asv_id = str_c('PA_', asv_id))
@@ -106,6 +109,9 @@ rosales_taxonomy <- read_blca('../../intermediate_files/rosales_2019.fasta.blca.
 klinges_taxonomy <- read_blca('../../intermediate_files/klinges_2022.fasta.blca.out')
 
 trytten_taxonomy <- read_blca('../../intermediate_files/trytten_unpub.fasta.blca.out')
+
+sweet_taxonomy <- read_blca('../../intermediate_files/sweet_2014.fasta.blca.out') %>%
+  mutate(asv_id = str_c('sweet_', asv_id) %>% str_remove('\\.1$'))
 
 #### Sequence Data ####
 panama_sequences <- read_rds('../../intermediate_files/prepped_microbiome.rds.gz') %>%
@@ -118,6 +124,9 @@ rosales_sequences <- readDNAStringSet('../../intermediate_files/rosales_2019.fas
 klinges_sequences <- readDNAStringSet('../../intermediate_files/klinges_2022.fasta')
 
 trytten_sequences <- readDNAStringSet('../../intermediate_files/trytten_unpub.fasta')
+
+sweet_sequences <- readDNAStringSet('../../intermediate_files/sweet_2014.fasta')
+names(sweet_sequences) <- str_c('sweet_', str_extract(names(sweet_sequences), 'K[A-Za-z0-9]+'))
 
 #### ASV Matching ####
 top_classification <- function(data, threshold = 80){
@@ -134,9 +143,13 @@ top_classification <- function(data, threshold = 80){
     ungroup
 }
 
+data <- matched_sequences$compare_taxa[[4]]; level = matched_sequences$taxon_level[[4]]; id = matched_sequences$name[[4]]
 filter_taxa <- function(data, level, id){
   filter(data, !!sym(level) == id)
 }
+
+filter_taxa(matched_sequences$compare_taxa[[12]], level = matched_sequences$taxon_level[[12]], id = matched_sequences$name[[12]]) %>%
+  top_classification()
 
 matched_sequences <- inner_join(panama_taxonomy, 
            top_asvs,
@@ -145,20 +158,23 @@ matched_sequences <- inner_join(panama_taxonomy,
   mutate(taxon_level = as.character(taxon_level)) %>%
   select(-confidence) %>%
   mutate(sequence = as_dna(as.character(panama_sequences[asv_id]))) %>%
-  expand_grid(datasouce = c('rosales', 'klinges', 'trytten')) %>%
+  expand_grid(datasouce = c('rosales', 'klinges', 'trytten', 'sweet')) %>%
   mutate(compare_taxa = case_when(datasouce == 'rosales' ~ list(rosales_taxonomy),
                                   datasouce == 'klinges' ~ list(klinges_taxonomy),
                                   datasouce == 'trytten' ~ list(trytten_taxonomy),
+                                  datasouce == 'sweet' ~ list(sweet_taxonomy),
                                   TRUE ~ list(NULL)),
          compare_seqs = case_when(datasouce == 'rosales' ~ list(rosales_sequences),
                                   datasouce == 'klinges' ~ list(klinges_sequences),
                                   datasouce == 'trytten' ~ list(trytten_sequences),
+                                  datasouce == 'sweet' ~ list(sweet_sequences),
                                   TRUE ~ list(NULL))) %>%
   filter(lengths(compare_taxa) > 0) %>%
   rowwise() %>%
   mutate(compare_taxa = list(filter_taxa(compare_taxa, level = taxon_level, id = name) %>%
-                               top_classification()),
-         compare_seqs = list(compare_seqs[compare_taxa$asv_id])) %>%
+                               top_classification())) %>%
+  filter(nrow(compare_taxa) > 0) %>%
+  mutate(compare_seqs = list(compare_seqs[compare_taxa$asv_id])) %>%
   
   
   mutate(compare = list(as_dna(as.character(compare_seqs)) %>%
@@ -237,10 +253,11 @@ mismatched_sequences <- trimmed_sequences %>%
 mismatched_sequences %>%
   filter((asv_id_compare %in% rosales_asvs & datasouce == 'rosales') |
            (asv_id_compare %in% klinges_asvs & datasouce == 'klinges') | #(datasouce == 'klinges') | #Klinges significance is associated with nutrients - all in "disease susceptible" corals
-           (asv_id_compare %in% trytten_asvs & datasouce == 'trytten')) %>%
+           (asv_id_compare %in% trytten_asvs & datasouce == 'trytten') |
+           (asv_id_compare %in% sweet_asvs & datasouce == 'sweet')) %>%
   mutate(pct_mismatch = n_mismatch / n_compare) %>%
   select(asv_id, name, datasouce, asv_id_compare, name_compare, n_mismatch, n_compare, pct_mismatch) %>%
-  select(-asv_id_compare, -name_compare)
+  select(-name_compare)
 
 
 rosales_original_taxonomy <- read_tsv('../../Data/rosales/taxonomy.tsv', show_col_types = FALSE) %>%

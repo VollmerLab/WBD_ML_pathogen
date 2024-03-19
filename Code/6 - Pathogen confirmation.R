@@ -69,7 +69,6 @@ select(pathogen_counts, health, all, none) %>%
   print %>%
   chisq.test(simulate.p.value = FALSE)
 
-
 select(pathogen_counts, health, starts_with('only'), starts_with('both')) %>%
   pivot_longer(cols = -health,
                names_to = 'asv',
@@ -95,7 +94,29 @@ select(pathogen_counts, health, starts_with('only'), starts_with('both')) %>%
 select(pathogen_counts, health, starts_with('only')) %>%
   column_to_rownames('health') %T>%
   print %>%
-  chisq.test(simulate.p.value = FALSE)
+  chisq.test()
+
+#only25
+select(pathogen_counts, health, starts_with('only')) %>%
+  mutate(other = only38 + only8, .keep = 'unused') %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  fisher.test()
+
+#only38
+select(pathogen_counts, health, starts_with('only')) %>%
+  mutate(other = only25 + only8, .keep = 'unused') %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  fisher.test()
+
+#only8
+select(pathogen_counts, health, starts_with('only')) %>%
+  mutate(other = only25 + only38, .keep = 'unused') %>%
+  column_to_rownames('health') %T>%
+  print %>%
+  fisher.test()
+
 
 select(pathogen_counts, health, all, none, starts_with('only')) %>%
   column_to_rownames('health') %T>%
