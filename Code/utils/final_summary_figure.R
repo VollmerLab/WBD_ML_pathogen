@@ -73,7 +73,7 @@ asv_rankings <- read_csv('../../Results/asv_importance.csv.gz',
          name = str_c(asv_id, ' - ', name),
          taxon_name = case_when(taxon_level == 'family' ~ str_c(name, sep = '; '),
                                  taxon_level == 'order' ~ name,
-                                 TRUE ~ str_c(name, family, sep = '; '))) %>%
+                                 TRUE ~ str_c(name, sep = '; '))) %>% #family
   
   mutate(taxon_name = case_when(face == 'bold' ~ str_c('__', taxon_name, '__'),
                                 TRUE ~ taxon_name),
@@ -349,10 +349,10 @@ tank_plot <- tank_models %>%
   plot_annotation(tag_levels = 'A') &
   theme(plot.tag.position = 'topleft',
         plot.tag.location = 'panel',
-        plot.tag = element_text(vjust = 5, size = 16),
+        plot.tag = element_text(vjust = 5, size = 16, face = 'bold'),
         plot.margin = margin(t = 10),
         panel.grid.major.y = element_line(colour = 'black', linetype = 'dotted'))
 ggsave('../../Results/Fig5_overview_results.png', height = 7, width = 12)
-
+ggsave('../../Results/Fig5.svg', height = 7, width = 12)
 
 

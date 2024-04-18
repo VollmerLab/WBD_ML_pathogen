@@ -211,14 +211,38 @@ individual_legend_jds <- function (mdf, cdf, group_name, col_name_group = "Top_P
   select_cdf <- cdf %>% filter(!!sym(col_name_group) == group_name)
   select_plot <- ggplot(select_mdf, aes(x = .data[[x]], y = .data[[y]], 
                                         fill = .data[[col_name_subgroup]], text = .data[[col_name_subgroup]])) + 
-    geom_col(position = "fill") + scale_fill_manual(name = group_name, 
-                                                    values = select_cdf$hex, breaks = select_cdf[[col_name_subgroup]]) + 
-    theme(legend.justification = "left") + theme(legend.title = element_text(face = "bold")) + 
-    theme(legend.key.size = unit(legend_key_size, "lines"), 
+    geom_col(position = "fill") + 
+    scale_fill_manual(name = group_name, 
+                      values = select_cdf$hex, 
+                      breaks = select_cdf[[col_name_subgroup]]) + 
+    theme(legend.justification = "left",
+          legend.title = element_text(face = "bold"),
+          legend.key.size = unit(legend_key_size, "lines"), 
+          legend.key = element_rect(colour = 'black'),
           text = element_text(size = legend_text_size),
           legend.text = element_markdown())
   legend <- get_legend(select_plot)
 }
+
+plot_microshades_jds <- function(mdf_group, cdf, group_label = "Phylum Genus", x = "Sample", y = "Abundance"){
+  if (class(mdf_group) != "data.frame") {
+    stop("mdf_group argument must be a data frame")
+  }
+  if ((sum(is.na(cdf$hex)) > 0) || (sum(is.na(cdf$group)) > 
+                                    0)) {
+    stop("cdf does not contain complete color information - missing hex or group info")
+  }
+  plot <- mdf_group %>% 
+    ggplot(aes(x = !!sym(x), y = !!sym(y), fill = group)) +
+    # geom_col(colour = 'black', fill = 'white') +
+    stat_summary(fun = sum, geom = "col",
+                 colour = "black", fill = "white") +
+    geom_col() +
+    scale_fill_manual(name = group_label, values = cdf$hex, breaks = cdf$group) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  plot
+}
+
 
 
 #### Read in data ####
@@ -238,6 +262,7 @@ unique_asvs <- asv_data %>%
 #### Data ####
 microbiome_data <- read_rds('../intermediate_files/prepped_microbiome.rds.gz') %>%
   prune_samples(sample_data(.) %>% rownames %in% unique(asv_data$sample_id), .) 
+
 
 
 #### Counts ####
@@ -266,6 +291,7 @@ tax_table(microbiome_data) %>%
 # grouping_levels <- c('dataset', 'year', 'season', 'health')
 # top_choices <- rev(c('Verrucomicrobiales', 'Alteromonadales', 'Vibrionales', 'Campylobacterales', 'Oceanospirillales'))
 
+
 make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lower_taxon = 'genus',
                               top_choices = NULL, ...){
   update_data <- data %>%
@@ -289,7 +315,8 @@ make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lo
            Sample = if_else(dataset == 'tank', health, str_remove(Sample, 'field_')),
            Sample = fct_relevel(Sample, 'Diseased', after = Inf),
            health = if_else(dataset == 'tank', 'Tank', health),
-           health = factor(health, levels = c('Healthy', 'Diseased', 'Tank'))) %>%
+           health = factor(health, levels = c('Healthy', 'Diseased', 'Tank')),
+           health2 = health) %>%
     as.data.frame() %>%
     mutate(genus = str_c('<i>', genus, '</i>'))
   
@@ -352,10 +379,6 @@ make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lo
   }
   
   
-  
-  
-  
-  
   mdf_ordergenus <- color_objs_ordergenus$mdf
   cdf_ordergenus <- color_objs_ordergenus$cdf
   
@@ -372,23 +395,42 @@ make_microbe_plot <- function(data, grouping_levels, highest_taxon = 'order', lo
                                        ...)
   }
   
-  plot_ordergenus_prelim <- plot_microshades(mdf_ordergenus, cdf_ordergenus) + 
-    scale_x_discrete(labels = ~str_remove_all(., '_(Healthy|Diseased)') %>% 
-                       str_replace_all('_', '\n') %>% 
-                       str_to_title() %>%
-                       str_replace_all(c('S' = 'July', 'W' = 'January'))) +
-    scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
-    facet_grid(~health, scales = "free", space = "free") +
+  plot_ordergenus_prelim <- plot_microshades_jds(mdf_ordergenus, cdf_ordergenus) + 
+    # scale_x_discrete(labels = ~str_remove_all(., '_(Healthy|Diseased)') %>%
+    #                    str_replace_all('_', '\n') %>%
+    #                    str_to_title() %>%
+    #                    str_replace_all(c('S' = 'July', 'W' = 'January'))) +
+    
+    scale_x_discrete(labels = ~str_remove_all(., '_(Healthy|Diseased)') %>%
+                       str_replace_all('July', 'Jul') %>%
+                       str_remove('_') %>%
+                       str_remove('20')) +
+    
+    # scale_y_continuous(labels = scales::percent, expand = expansion(0)) +
+    scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.05))) +
+    # facet_grid(~health, scales = "free", space = "free",
+               # labeller = labeller(health = c('Healthy' = 'A', 'Diseased' = 'B', 'Tank' = 'C'))) +
+    facet_grid(~health, scales = "free", space = "free", switch = 'both') +
     theme_bw() +
-    theme(legend.position = "none", plot.margin = margin(6,20,6,6),
+    theme(legend.position = "none", 
+          plot.margin = margin(t = 20, r = 20, 
+                               b = 6, l = 6),
+          strip.placement = 'outside',
           axis.title.x = element_blank(),
           axis.text = element_text(colour = 'black', size = 12),
           strip.background = element_blank(),
-          strip.text = element_text(colour = 'black', size = 16),
+          strip.text = element_text(colour = 'black', size = 14),
           axis.title.y = element_text(colour = 'black', size = 16),
           plot.background = element_rect(colour = 'white'))
   
-  # plot_out <- plot_grid(plot_ordergenus_prelim, legend_ordergenus,  rel_widths = c(1, .25))
+  # library(tagger)
+  # tmp <- plot_ordergenus_prelim +
+  #   coord_cartesian(clip = 'off') +
+  #   tag_facets(tag_suffix = '', tag_levels = 'A',
+  #                      position = list(x = 0, y = 1, 
+  #                                      hjust = 0, vjust = 0.5)) +
+  #   theme(tagger.panel.tag.text = element_text(colour = 'black', size = 18, face = 'bold'),
+  #         tagger.panel.tag.background = element_blank())
   
   list(plot = plot_ordergenus_prelim,
        legend = legend_ordergenus,
@@ -411,12 +453,20 @@ microbial_diversity <- microbiome_data %>%
                     legend_key_size = 1, legend_text_size = 14) #, compression_vect = c(3.5, 1)
 # microbial_diversity$plot
 
+microbial_diversity$plot +
+  theme(strip.text = element_text(hjust = 0, size = 16, face = 'bold'))
 
+# plot_grid(microbial_diversity$plot +
+#             theme(strip.text = element_text(face = 'bold', hjust = 0, size = 18)),
+#           cowplot::plot_grid(NULL, microbial_diversity$legend, NULL, ncol = 1, rel_heights = c(0.12, 1, 0.12)), 
+#           rel_widths = c(1, .25))
+ggsave('../Results/Fig2_microbial_diversity.png', height = 10, width = 10, bg = 'white')
 
 plot_grid(microbial_diversity$plot,
           cowplot::plot_grid(NULL, microbial_diversity$legend, NULL, ncol = 1, rel_heights = c(0.12, 1, 0.12)), 
           rel_widths = c(1, .25))
-ggsave('../Results/Fig2_microbial_diversity.png', height = 10, width = 10, bg = 'white')
+ggsave('../Results/Fig2.svg', height = 10, width = 10, bg = 'white')
+#Have to add A/B/C above plot in inkscape
 
 write_rds(microbial_diversity[-1], '../intermediate_files/asv_colors.rds')
 

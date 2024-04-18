@@ -1,5 +1,6 @@
 library(tidyverse)
 library(chisq.posthoc.test)
+library(ggtext)
 
 pathogens <- str_c('ASV', c(8, 25, 38))
 
@@ -8,7 +9,133 @@ pathogens <- str_c('ASV', c(8, 25, 38))
 field_data <- read_csv('../intermediate_files/normalized_field_asv_counts.csv', 
                        show_col_types = FALSE) %>%
   filter(asv_id %in% pathogens) %>%
-  select(asv_id, sample_id, n_reads, health)
+  select(asv_id, sample_id, n_reads, health, site, season, year)
+
+#### Binomial Model ####
+library(blme)
+library(emmeans)
+
+binomial_data <- field_data %>%
+  group_by(asv_id, site, season, year, health) %>%
+  summarise(n = sum(n_reads > 0),
+            total = n(),
+            .groups = 'drop') %>%
+  mutate(time = str_c(season, year, sep = '_'))
+
+pathogen_binomial_model <- bglmer(cbind(n, total - n) ~ asv_id * health * time + (1 + asv_id | site),
+       data = binomial_data,
+       family = 'binomial',
+       fixef.prior = normal(cov = diag(9, 24)), 
+       control = glmerControl(optimizer = 'bobyqa'))
+
+car::Anova(pathogen_binomial_model)
+
+emmeans(pathogen_binomial_model, ~time | asv_id,
+        at = list(health = 'D')) %>%
+  contrast('poly')
+
+emmeans(pathogen_binomial_model, ~time | asv_id,
+        at = list(health = 'H')) %>%
+  contrast('pairwise')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'D')) %>%
+  contrast('pairwise')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'H')) %>%
+  contrast('pairwise')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'D')) %>%
+  contrast('pairwise')
+
+emmeans(pathogen_binomial_model, ~health * time * asv_id, type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  mutate(health = if_else(health == 'D', 'Diseased', 'Healthy')) %>%
+  ggplot(aes(x = asv_id, y = prob, ymin = conf.low, ymax = conf.high, 
+             fill = health, group = time, shape = time)) +
+  geom_errorbar(width = 0.05, position = position_dodge(0.5), 
+                show.legend = FALSE) +
+  geom_point(position = position_dodge(0.5), size = 3) +
+  
+  guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
+         shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = set_names(c(wesanderson::wes_palette("Zissou1", 2, 
+                                                                  type = "continuous")),
+                                       c('Healthy', 'Diseased')),
+                    breaks = c('Diseased', 'Healthy'), drop = FALSE) +
+  scale_shape_manual(values = c('S_2016' = 'square filled',
+                                'S_2017' = 'triangle filled',
+                                'W_2016' = 'diamond filled',
+                                'W_2017' = 'triangle down filled'),
+                     breaks = c('W_2016', 'S_2016', 'W_2017', 'S_2017'),
+                     labels = c('S_2016' = '16Jul',
+                                'S_2017' = '17Jul',
+                                'W_2016' = '16Jan',
+                                'W_2017' = '17Jan'),
+                     drop = FALSE) +
+  
+  labs(x = NULL,
+       y = 'Detectable Quantity',
+       shape = 'Time',
+       fill = 'Disease\nState') +
+  theme_classic() +
+  theme(legend.title = element_text(colour = 'black', size = 14),
+        legend.text = element_text(colour = 'black', size = 10),
+        legend.key = element_blank(),
+        panel.background = element_rect(colour = 'black'),
+        axis.text = element_text(colour = 'black', size = 10),
+        axis.title = element_text(colour = 'black', size = 14))
+
+
+emmeans(pathogen_binomial_model, ~health * time * asv_id, type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  mutate(asv_id = factor(asv_id, levels = str_c('ASV', c(25, 8, 38)))) %>%
+  arrange(asv_id) %>%
+  mutate(health = if_else(health == 'D', 'Diseased', 'Healthy'),
+         time = factor(time, levels = c('W_2016', 'S_2016', 'W_2017', 'S_2017')),
+         name = case_when(asv_id == 'ASV25' ~ '<i>Cysteiniphilum litorale</i>',
+                          asv_id == 'ASV8' ~ '<i>Vibrio sp.</i>',
+                          asv_id == 'ASV26' ~ 'Oceanospirillaceae',
+                          asv_id == 'ASV30' ~ '<i>Thalassotalea sp.</i>',
+                          asv_id == 'ASV361' ~ '<i>Endozoicomonas atrinae</i>',
+                          asv_id == 'ASV38' ~ '<i>Neptuniibacter sp.</i>',
+                          asv_id == 'ASV51' ~ '<i>Neptuniibacter sp.</i>',
+                          asv_id == 'ASV40' ~ '<i>Qipengyuania sp.</i>',
+                          TRUE ~ 'Unknown'),
+         name = str_c(asv_id, name, sep = ' - '),
+         name = fct_reorder(name, as.integer(asv_id))) %>%
+  ggplot(aes(x = time, y = prob, ymin = conf.low, ymax = conf.high, 
+             colour = health)) +
+  geom_errorbar(width = 0.05, position = position_dodge(0.5), 
+                show.legend = FALSE) +
+  geom_point(position = position_dodge(0.5), size = 3, shape = 'circle') +
+  
+  guides(colour = guide_legend(override.aes = list(shape = 'circle', size = 4))) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_discrete(labels = c('S_2016' = '16Jul', 'S_2017' = '17Jul', 'W_2016' = '16Jan', 'W_2017' = '17Jan')) +
+  scale_colour_manual(values = set_names(c(wesanderson::wes_palette("Zissou1", 2, 
+                                                                  type = "continuous")),
+                                       c('Healthy', 'Diseased')),
+                    breaks = c('Diseased', 'Healthy'), drop = FALSE) +
+  facet_wrap(~name) +
+  labs(x = NULL,
+       y = 'ASV Prevalence',
+       colour = 'Disease\nState') +
+  theme_classic() +
+  theme(legend.title = element_text(colour = 'black', size = 14),
+        legend.text = element_text(colour = 'black', size = 10),
+        legend.key = element_blank(),
+        panel.background = element_rect(colour = 'black'),
+        axis.text = element_text(colour = 'black', size = 10),
+        axis.title = element_text(colour = 'black', size = 14),
+        strip.background = element_blank(),
+        strip.text = element_markdown(hjust = 0, size = 16, colour = 'black'))
+ggsave('../Results/Fig7.png', height = 7, width = 12)
+
+
 
 #### Independent Counts ####
 field_data %>%
@@ -130,6 +257,14 @@ select(pathogen_counts, health, starts_with('both')) %>%
   print %>%
   fisher.test(simulate.p.value = FALSE)
 
+## 25 vs 8 ##
+tibble(asv_id = str_c('ASV', c(25,8)),
+       disease = c(12, 21),
+       healthy = c(7, 60)) %>%
+  rowwise %>%
+  mutate(broom::tidy(prop.test(x = disease, n = disease + healthy)),
+         se = sqrt(estimate * (1 - estimate) / (disease + healthy))) %>%
+  select(asv_id, estimate, se)
 
 #### Experimental ####
 library(emmeans)

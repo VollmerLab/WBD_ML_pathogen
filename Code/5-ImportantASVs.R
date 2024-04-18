@@ -521,6 +521,9 @@ classified_plots <- tank_asv_models %>%
                         list(plot + scale_x_discrete(labels = ~str_replace(., '-', '\n'))),
                         list(plot))) %>%
   mutate(plot = list(plot + 
+                       geom_vline(xintercept = 1.5, linewidth = 0.5) +
+                       scale_y_continuous(limits = c(4.75, 17.5),
+                                          breaks = c(5, 7.5, 10, 12.5, 15, 17.5)) +
                        labs(y = 'log<sub>2</sub>(CPM)', 
                             x = NULL,
                             colour = 'Disease\nState',
@@ -532,7 +535,7 @@ classified_plots <- tank_asv_models %>%
                              legend.key = element_blank(),
                              axis.title.y = element_markdown(colour = 'black', size = 18),
                              legend.title = element_text(colour = 'black', size = 14),
-                             axis.text.x = element_text(colour = 'black', size = 12)))) %>%
+                             axis.text.x = element_text(colour = 'black', size = 10)))) %>%
   
   # mutate(plot = list(plot + labs(title = str_c(order, family, genus, species, asv_id, sep = '\n')) +
   #                      theme(plot.title = element_text(size = 10)))) %>%
@@ -547,14 +550,16 @@ classified_plots <- tank_asv_models %>%
                           asv_id == 'ASV40' ~ '<i>Qipengyuania sp.</i>',
                           TRUE ~ 'Unknown'),
          plot = list(plot + 
-                       labs(title = name) +
-                       theme(plot.title = element_markdown(colour = 'black', size = 14)))) %>%
+                       labs(title = str_c(asv_id, name, sep = ' - ')) +
+                       theme(plot.title = element_markdown(colour = 'black', size = 10)))) %>%
   
   ungroup %>%
   filter(asv_id != 'ASV40') %>%
   arrange(likely_type) %>%
+  mutate(asv_id = factor(asv_id, levels = str_c('ASV', c(25, 8, 30, 26, 361, 38, 51)))) %>%
+  arrange(asv_id) %>%
   group_by(likely_type) %>%
-  summarise(plot_set = list(wrap_plots(plot, nrow = 1) + plot_layout(axis_titles = 'collect_y'))) %>%
+  summarise(plot_set = list(wrap_plots(plot, nrow = 1) + plot_layout(axis_titles = 'collect_y', axes = 'collect_y'))) %>%
   pull(plot_set) %>%
   wrap_plots(nrow = 2) +
   plot_layout(guides = 'collect') +
@@ -563,8 +568,8 @@ classified_plots <- tank_asv_models %>%
   theme(plot.tag = element_text(face = 'bold', size = 22)) 
   
 classified_plots
-ggsave('../Results/Fig6_important_asvs.png', height = 15, width = 15)
-
+ggsave('../Results/Fig6_important_asvs.png', height = 12, width = 12)
+ggsave('../Results/Fig6.svg', height = 12, width = 12)
 
 
 

@@ -429,7 +429,9 @@ colony_points_nmds %>%
          health = if_else(health == 'D', 'Diseased', 'Healthy')) %>%
   ggplot(aes(x = NMDS1, y = NMDS2)) +
   geom_point(aes(shape = site, colour = health, fill = health), size = 1.5) +
-  facet_wrap(~timepoint, labeller = labeller(timepoint = ~str_replace(., '_', ' - '))) +
+  # facet_wrap(~timepoint, labeller = labeller(timepoint = ~str_replace(., '_', ' - '))) +
+  facet_wrap(~timepoint, labeller = labeller(timepoint = c('2016_Jan' = 'A', '2016_Jul' = 'B',
+                                                           '2017_Jan' = 'C', '2017_Jul' = 'D'))) +
   scale_shape_manual(values = c('CK14' = 'circle filled', 'CK4' = 'square filled', 'HS' = 'diamond filled', 
                                 'SB' = 'triangle filled', 'TS' = 'triangle down filled')) +
   scale_colour_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
@@ -437,17 +439,21 @@ colony_points_nmds %>%
   scale_fill_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
                                          c('Healthy', 'Diseased'))) +
   guides(fill = 'none',
-         shape = guide_legend(override.aes = list(fill = 'black', size = 3)),
-         colour = guide_legend(override.aes = list(size = 3))) +
+         shape = guide_legend(override.aes = list(fill = 'black', size = 4)),
+         colour = guide_legend(override.aes = list(size = 4))) +
   labs(colour = 'Disease\nState',
        shape = 'Site') +
   theme_classic() +
   theme(panel.background = element_rect(colour = 'black'),
         strip.background = element_blank(),
-        strip.text = element_text(colour = 'black', size = 14),
+        legend.key = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14),
+        strip.text = element_text(hjust = 0, colour = 'black', size = 18, face = 'bold'),
         axis.title = element_text(colour = 'black', size = 14),
-        axis.text = element_text(colour = 'black', size = 10))
-ggsave('../Results/Fig3_NMDS_field.png', height = 7, width = 7)
+        axis.text = element_text(colour = 'black', size = 12))
+ggsave('../Results/Fig3_NMDS_field.png', height = 10, width = 10)
+ggsave('../Results/Fig3.svg', height = 10, width = 10)
 
 colony_points_nmds %>% 
   ggplot(aes(x = NMDS1, y = NMDS2)) +

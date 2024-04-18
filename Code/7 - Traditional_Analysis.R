@@ -137,25 +137,73 @@ base_plot <- base_plot_data %>%
           ) + 
             # scale_fill_manual(values = c('yes' = 'red', 'no' = '#595959', 
             #                              'Pathogen' = 'orange', 'Opportunist' = 'green')) +
-            scale_fill_manual(values = c('no' = 'gray65', 'yes' = 'gray25')) +
             # scale_fill_manual(values = c('yes' = 'gray', 'no' = '#595959', 'Pathogen' = 'red')) +
-            theme(legend.position = 'none')
+            scale_fill_manual(values = c('no' = 'gray65', 'yes' = 'gray25')) +
+            scale_y_continuous(labels=scales::comma_format(), 
+                               expand = expansion(mult = c(0.01, 0.05))) +
+            labs(tag = 'B') +
+            theme_classic() +
+            theme(legend.position = 'none',
+                  panel.background = element_rect(colour = 'black'),
+                  # axis.ticks.y = element_line(colour = 'black'),
+                  # axis.minor.ticks.y.left = element_blank(),
+                  axis.text.x = element_blank(),
+                  axis.ticks.x = element_blank(),
+                  axis.title.x = element_blank(),
+                  axis.title = element_text(colour = 'black', size = 14),
+                  axis.text = element_text(colour = 'black', size = 10),
+                  plot.tag = element_text(colour = 'black', size = 18, 
+                                            face = 'bold', hjust = 0))
         ),
         annotations = list(
           'Order' = ggplot(mapping = aes(fill = the_colour)) +
+            geom_bar(fill = 'white', colour = 'black', stat = 'count', 
+                     position = 'fill', show.legend = FALSE) +
             geom_bar(stat = 'count', position = 'fill', show.legend = FALSE) +
-            scale_y_continuous(labels=scales::percent_format()) +
+            scale_y_continuous(labels=scales::percent_format(), 
+                               expand = expansion(mult = c(0.01, 0.05))) +
             scale_fill_manual(values = microbe_colors) +
-            labs(y = 'Abundance')
+            labs(y = 'Relative Abundance',
+                 tag = 'A') +
+            theme_classic() +
+            theme(legend.position = 'none',
+                  panel.background = element_rect(colour = 'black'),
+                  axis.ticks.y = element_line(colour = 'black'),
+                  axis.minor.ticks.y.left = element_blank(),
+                  axis.text.x = element_blank(),
+                  axis.ticks.x = element_blank(),
+                  axis.title.x = element_blank(),
+                  axis.title = element_text(colour = 'black', size = 14),
+                  axis.text = element_text(colour = 'black', size = 10),
+                  plot.tag = element_text(colour = 'black', size = 18, 
+                                            face = 'bold', hjust = 0))
         ),
         
         set_sizes=(
-          upset_set_size(geom=geom_bar(fill = 'gray65')) + 
-            geom_text(aes(label = after_stat(count)), hjust = 0, stat = 'count', colour = 'white') +
+          upset_set_size(geom = geom_bar(fill = c('gray65', '#F21A00', '#3B9AB2')),
+                         position = 'right') + #'gray65'
+            geom_text(aes(label = after_stat(count)), hjust = 1.1, stat = 'count', 
+                      colour = 'white', fontface = 'bold', size = 4) +
           # + annotate(geom='text', label='@', x='Drama', y=850, color='white', size=3) +
             # expand_limits(y = 200) +
-            theme(axis.text.x = element_text(angle = 0))
-        ), 
+            labs(tag = 'D') +
+            theme_classic() +
+            theme(panel.background = element_rect(colour = 'black'),
+                  axis.ticks.x = element_line(colour = 'black'),
+                  axis.title = element_text(colour = 'black', size = 14),
+                  axis.text.x = element_text(angle = 0,  colour = 'black', size = 10),
+                  axis.title.y = element_blank(),
+                  axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  plot.tag = element_text(colour = 'black', size = 18, 
+                                          face = 'bold', hjust = 0))
+        ),
+        
+        matrix = (
+          intersection_matrix() +
+            labs(tag = 'C') +
+            theme_classic() 
+        ),
         # min_size = 10,
         sort_intersections=FALSE,
         intersections=list(c('Healthy', 'Time'),
@@ -165,16 +213,36 @@ base_plot <- base_plot_data %>%
                            'Time',
                            'Outside of known sets'),
         sort_sets = FALSE, 
-        name = NULL
+        name = NULL,
+        themes = upset_modify_themes(list('intersections_matrix' = theme(axis.text.y = element_text(color = c('black', '#F21A00', '#3B9AB2'),
+                                                                                                    size = 14, face = 'bold'),
+                                                                         panel.background = element_rect(colour = 'black'),
+                                                                         panel.border = element_rect(colour = 'black', fill = 'transparent'),
+                                                                         plot.tag = element_text(colour = 'black', size = 18, 
+                                                                                                 face = 'bold', hjust = 0),
+                                                                         axis.ticks = element_line(colour = 'black'),
+                                                                         axis.line = element_line(colour = "black", 
+                                                                                                  linewidth = rel(1))))),
+        upset_stripes(colors = NA)
   )
 
+base_plot
+
+# plot_grid(base_plot, 
+#           cowplot::plot_grid(NULL, colour_options$legend, NULL, ncol = 1, rel_heights = c(0.1, 1, 0.4)), 
+#           rel_widths = c(1, .25))
+# ggsave('../Results/Fig4_traditional_complexUpset.png', 
+#        height = 12, width = 10, bg = 'white')
 
 
-plot_grid(base_plot, 
-          cowplot::plot_grid(NULL, colour_options$legend, NULL, ncol = 1, rel_heights = c(0.1, 1, 0.4)), 
-          rel_widths = c(1, .25))
+ggdraw(base_plot) +
+  draw_plot(colour_options$legend, 
+            x = 0.75, y = 0.25, width = 0.25, height = 0.75)
 ggsave('../Results/Fig4_traditional_complexUpset.png', 
        height = 12, width = 10, bg = 'white')
+ggsave('../Results/Fig4.svg', 
+       height = 12, width = 10, bg = 'white')
+
 
 
 select(fixed_models, -where(is.list)) %>%

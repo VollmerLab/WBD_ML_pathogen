@@ -219,6 +219,19 @@ model_data_2 <- bocas_temp %>%
   
 
 #### Analysis of Acerv Density ####
+acerv_model_fixed <-  glm(cbind(n_acerv, total_meters - n_acerv) ~ 
+                            timepoint * site, 
+                          family = 'binomial',
+                          data = model_data_2)
+
+emmeans(acerv_model_fixed, ~site * timepoint, type = 'response') %>%
+  broom::tidy(conf.int = TRUE) %>%
+  ggplot(aes(x = timepoint, y = prob, ymin = conf.low, ymax = conf.high, color = site)) +
+  geom_pointrange() +
+  facet_wrap(~site) +
+  scale_y_continuous(limits = c(0,1))
+ggsave('../Results/acerv_abund_site.png', height = 10, width = 10)  
+
 acerv_model_random <-  glmer(cbind(n_acerv, total_meters - n_acerv) ~ 
                               timepoint + (1 | site), 
                             family = 'binomial',
@@ -286,6 +299,16 @@ model_grid_acer <- ref_grid(acerv_model_random)
 add_grouping(model_grid_acer, 'low_high', 'timepoint', 
              factor(c('high', 'other', 'low', 'low', 'low'))) %>%
   emmeans(~low_high, type = 'response')
+
+
+# % change density Acerv start to end 
+emmeans(acerv_model_random, ~timepoint, type = 'unlink') %>%
+  regrid() %>%
+  contrast(method = list('Start_End' = c(-1, 0, 0, 0, 1)))
+#
+
+#Largest % change 
+
 
 #### WBD Analysis ####
 full_model_random <-  glmer(cbind(n_wbd, n_acerv - n_wbd) ~ 
@@ -532,3 +555,4 @@ temp_association_coral <- emmeans(acerv_model_random, ~timepoint,
         axis.title = element_text(size = 12),
         axis.text.y = element_text(size = 10, colour = 'black')) 
 ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 7)
+ggsave('../Results/Fig1.svg', height = 10, width = 7)
