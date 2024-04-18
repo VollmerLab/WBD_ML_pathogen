@@ -20,15 +20,32 @@ binomial_data <- field_data %>%
   summarise(n = sum(n_reads > 0),
             total = n(),
             .groups = 'drop') %>%
-  mutate(time = str_c(season, year, sep = '_'))
+  mutate(time = str_c(season, year, sep = '_'),
+         time = factor(time, levels = c('W_2016', 'S_2016',
+                                        'W_2017', 'S_2017'),
+                       ordered = TRUE))
 
 pathogen_binomial_model <- bglmer(cbind(n, total - n) ~ asv_id * health * time + (1 + asv_id | site),
        data = binomial_data,
        family = 'binomial',
        fixef.prior = normal(cov = diag(9, 24)), 
-       control = glmerControl(optimizer = 'bobyqa'))
+       control = glmerControl(optimizer = 'nlminbwrap'))
 
 car::Anova(pathogen_binomial_model)
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'D'), type = 'response')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'D')) %>%
+  contrast('pairwise')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'H'), type = 'response')
+
+emmeans(pathogen_binomial_model, ~asv_id,
+        at = list(health = 'H')) %>%
+  contrast('pairwise')
 
 emmeans(pathogen_binomial_model, ~time | asv_id,
         at = list(health = 'D')) %>%
@@ -36,11 +53,9 @@ emmeans(pathogen_binomial_model, ~time | asv_id,
 
 emmeans(pathogen_binomial_model, ~time | asv_id,
         at = list(health = 'H')) %>%
-  contrast('pairwise')
+  contrast('poly')
 
-emmeans(pathogen_binomial_model, ~asv_id,
-        at = list(health = 'D')) %>%
-  contrast('pairwise')
+
 
 emmeans(pathogen_binomial_model, ~asv_id,
         at = list(health = 'H')) %>%
@@ -115,7 +130,8 @@ emmeans(pathogen_binomial_model, ~health * time * asv_id, type = 'response') %>%
   
   guides(colour = guide_legend(override.aes = list(shape = 'circle', size = 4))) +
   scale_y_continuous(labels = scales::percent_format()) +
-  scale_x_discrete(labels = c('S_2016' = '16Jul', 'S_2017' = '17Jul', 'W_2016' = '16Jan', 'W_2017' = '17Jan')) +
+  scale_x_discrete(labels = c('S_2016' = '16Jul', 'S_2017' = '17Jul', 
+                              'W_2016' = '16Jan', 'W_2017' = '17Jan')) +
   scale_colour_manual(values = set_names(c(wesanderson::wes_palette("Zissou1", 2, 
                                                                   type = "continuous")),
                                        c('Healthy', 'Diseased')),
@@ -134,7 +150,7 @@ emmeans(pathogen_binomial_model, ~health * time * asv_id, type = 'response') %>%
         strip.background = element_blank(),
         strip.text = element_markdown(hjust = 0, size = 16, colour = 'black'))
 ggsave('../Results/Fig7.png', height = 7, width = 12)
-
+ggsave('../Results/Fig7.svg', height = 7, width = 12)
 
 
 #### Independent Counts ####

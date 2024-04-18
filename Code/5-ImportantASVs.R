@@ -377,7 +377,8 @@ plot_prePost <- function(model, data, field_fitted){
     #                    na.value = 'square filled') +
     scale_shape_manual(values = c('Disease' = 'diamond', 'Control' = 'square', 'Field' = 'circle')) +
     scale_colour_manual(values = set_names(wesanderson::wes_palette("Zissou1", 2, type = "continuous"),
-                                           c('Healthy', 'Diseased')))
+                                           c('Healthy', 'Diseased')),
+                        breaks = c('Diseased', 'Healthy'))
   
 }
 
