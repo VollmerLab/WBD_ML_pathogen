@@ -130,7 +130,7 @@ temp_plot <- bocas_temp %>%
   #            aes(xintercept = date), linetype = 'dotdash') +
   geom_line(aes(y = water_temp), colour = 'black') +
   geom_line(aes(y = a + dhw*b), colour = '#F21A00') +
-  scale_y_continuous(name = "Temperature (Celsius °)",
+  scale_y_continuous(name = "Temperature (°C)",
                      sec.axis = sec_axis(~ (. - a) / b, 
                                          name = 'DHW',
                                          breaks = c(0, 4, 8, 12))) + 
@@ -163,7 +163,7 @@ cyclical_temp_plot <- bocas_temp %>%
   # geom_vline(xintercept = ymd(c('2000-09-01', '2000-12-01')), colour = 'red') +
   scale_x_date(date_labels = '%b') +
   labs(x = NULL,
-       y = 'Mean Daily Temperature (°C)') +
+       y = 'Temperature (°C)') +
   theme_classic() +
   theme(axis.title = element_text(colour = 'black', size = 14),
         axis.text = element_text(colour = 'black', size = 10),
@@ -219,19 +219,6 @@ model_data_2 <- bocas_temp %>%
   
 
 #### Analysis of Acerv Density ####
-acerv_model_fixed <-  glm(cbind(n_acerv, total_meters - n_acerv) ~ 
-                            timepoint * site, 
-                          family = 'binomial',
-                          data = model_data_2)
-
-emmeans(acerv_model_fixed, ~site * timepoint, type = 'response') %>%
-  broom::tidy(conf.int = TRUE) %>%
-  ggplot(aes(x = timepoint, y = prob, ymin = conf.low, ymax = conf.high, color = site)) +
-  geom_pointrange() +
-  facet_wrap(~site) +
-  scale_y_continuous(limits = c(0,1))
-ggsave('../Results/acerv_abund_site.png', height = 10, width = 10)  
-
 acerv_model_random <-  glmer(cbind(n_acerv, total_meters - n_acerv) ~ 
                               timepoint + (1 | site), 
                             family = 'binomial',
@@ -540,14 +527,14 @@ temp_association_coral <- emmeans(acerv_model_random, ~timepoint,
           axis.text.y.right = element_text(colour = 'red'),
           axis.ticks.y.right = element_line(colour = 'red'),)) / 
   # (dhw_plot + theme(axis.text.x = element_blank())) /
-  (prevelance_plot + labs(y = 'WBD Prevelance (%)') + 
+  (prevelance_plot + labs(y = 'WBD Prevalence (%)') + 
      theme(axis.text.x = element_blank())) / 
   (abundance_plot + labs(y = '<i>A. cervicornis</i> (m<sup>-2</sup>)') +
      theme(axis.text.x = element_text(size = 12),
            axis.title.y = element_markdown()))) | 
   ((cyclical_temp_plot +
       theme(axis.text.x = element_text(size = 12))) /
-     (temp_wbd_plot + labs(y = 'WBD Prevelance (%)') +
+     (temp_wbd_plot + labs(y = 'WBD Prevalence (%)') +
         theme(axis.text.x = element_text(size = 12))))) &
   
   plot_annotation(tag_levels = list(c('A', 'C', 'D', 'B', 'E'))) &

@@ -123,7 +123,7 @@ base_plot <- base_plot_data %>%
   # filter(!if_all(where(is.logical), ~!.)) %>%
   mutate(Time = Time | `Disease State x Time`, .keep = 'unused') %>%
   # filter(`Disease Associated` | `Healthy Associated`) %>%
-  rename(Disease = `Disease Associated`,
+  rename(Diseased = `Disease Associated`,
          Healthy = `Healthy Associated`) %>%
   # relocate(Time, .after = `Disease State x Time`) %>%
   # select(-Time) %>%
@@ -208,8 +208,8 @@ base_plot <- base_plot_data %>%
         sort_intersections=FALSE,
         intersections=list(c('Healthy', 'Time'),
                            'Healthy',
-                           c('Disease', 'Time'),
-                           'Disease',
+                           c('Diseased', 'Time'),
+                           'Diseased',
                            'Time',
                            'Outside of known sets'),
         sort_sets = FALSE, 

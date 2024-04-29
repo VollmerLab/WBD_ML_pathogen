@@ -81,7 +81,8 @@ asv_rankings <- read_csv('../../Results/asv_importance.csv.gz',
                                 colour == 'blue' ~ str_c("<span style='color:#3B9AB2'>", taxon_name, "</span>"),
                                 TRUE ~ taxon_name)) %>%
   
-  mutate(taxon_name = fct_reorder(taxon_name, response, .desc = TRUE)) %>%
+  mutate(taxon_name = str_replace_all(taxon_name, ' marine sediment group sp.', ' group'),
+         taxon_name = fct_reorder(taxon_name, response, .desc = TRUE)) %>%
   
   filter(!is.na(taxon_name))
 
@@ -229,9 +230,9 @@ shap_plot <- asv_shaps %>%
   geom_quasirandom(aes(group = 1), groupOnX = FALSE, dodge.width = 1, 
                    shape = 'circle filled') +
   scale_fill_gradient2(midpoint = 0, 
+                       # labels = c('Healthy', '5', '0', '5', 'Diseased'),
                        low = wesanderson::wes_palette("Zissou1", 2, type = "continuous")[1],
-                       high = wesanderson::wes_palette("Zissou1", 2, type = "continuous")[2],
-                       labels = c('Healthy', '5', '0', '5', 'Diseased')) +
+                       high = wesanderson::wes_palette("Zissou1", 2, type = "continuous")[2]) +
   # guides(shape = guide_legend(override.aes = list(size = 4))) +
   labs(fill = 'Normalized<br>log<sub>2</sub>(CPM)',
        shape = 'Disease<br>State',
@@ -263,9 +264,14 @@ field_plot <- field_models %>%
                 width = 0.1, position = position_dodge(0.5),
                 show.legend = FALSE) + 
   geom_point(position = position_dodge(0.5), shape = 'circle filled') +
-  scale_fill_manual(values = set_names(c('white', wesanderson::wes_palette("Zissou1", 2, type = "continuous")),
+  scale_fill_manual(values = set_names(c('white', #'grey50',
+                                         wesanderson::wes_palette("Zissou1", 2, 
+                                                                  type = "continuous")),
                                        c('Neither', 'Healthy', 'Diseased')),
-                    breaks = c('Diseased', 'Healthy')) +
+                    breaks = c('Diseased', 'Neither', 'Healthy'), 
+                    labels = c('Diseased' = 'Diseased', 'Neither' = 'Unassociated', 
+                               'Healthy' = 'Healthy'),
+                    drop = FALSE) +
   scale_x_continuous(limits = c(-7, 12), breaks = c(-5, 0, 5)) +
   # scale_fill_manual(values = c('TRUE' = 'black', 'FALSE' = 'white')) +
   # scale_shape_manual(values = c('2016 Jan' = 'square filled', '2016 Jul' = 'diamond filled', 
@@ -313,7 +319,7 @@ tank_plot <- tank_models %>%
                 show.legend = FALSE) + 
   geom_point(position = position_dodge(0.5), show.legend = TRUE) +
   geom_label(aes(x = 0, label = if_else(is.na(estimate), 'nt', NA_character_)),
-             fill = alpha('white', 0.5), label.size = NA) +
+             fill = alpha('white', 1), label.size = NA) +
   
   guides(fill = guide_legend(override.aes = list(shape = 'circle filled', size = 4)),
          shape = guide_legend(override.aes = list(size = 4, fill = 'black'))) +
@@ -322,11 +328,14 @@ tank_plot <- tank_models %>%
                                          wesanderson::wes_palette("Zissou1", 2, 
                                                                   type = "continuous")),
                                        c('Neither', 'Healthy', 'Diseased')),
-                    breaks = c('Diseased', 'Healthy'), drop = FALSE) +
+                    breaks = c('Diseased', 'Neither', 'Healthy'), 
+                    labels = c('Diseased' = 'Diseased', 'Neither' = 'Unassociated', 
+                               'Healthy' = 'Healthy'),
+                    drop = FALSE) +
   scale_shape_manual(values = c('Field' = 'circle filled', 
-                                'Exposure' = 'square filled', 
-                                'Outcome' = 'diamond filled'), 
-                     breaks = c('Exposure', 'Outcome', 'Field'),
+                                'Exposure' = 'triangle filled', 
+                                'Outcome' = 'triangle down filled'), 
+                     breaks = c('Exposure', 'Outcome'),
                      drop = FALSE) +
   labs(x = 'Tank log<sub>2</sub>(D/H)',
        y = NULL,
@@ -351,7 +360,7 @@ tank_plot <- tank_models %>%
         plot.tag.location = 'panel',
         plot.tag = element_text(vjust = 5, size = 16, face = 'bold'),
         plot.margin = margin(t = 10),
-        panel.grid.major.y = element_line(colour = 'black', linetype = 'dotted'))
+        panel.grid.major.y = element_line(colour = 'grey50', linetype = 'dotted'))
 ggsave('../../Results/Fig5_overview_results.png', height = 7, width = 12)
 ggsave('../../Results/Fig5.svg', height = 7, width = 12)
 

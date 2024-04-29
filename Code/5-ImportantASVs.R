@@ -331,7 +331,7 @@ field_asv_models %>%
   ungroup %>%
   pull(plot) %>%
   wrap_plots(byrow = TRUE)
-ggsave('../Results/important_asvs_field.png', height = 15, width = 15)
+# ggsave('../Results/important_asvs_field.png', height = 15, width = 15)
 
 
 #### Model ASVs in tanks ####
@@ -519,8 +519,8 @@ classified_plots <- tank_asv_models %>%
   left_join(taxonomy, by = 'asv_id') %>%
   rowwise %>%
   mutate(plot = if_else(likely_type == 'Opportunist',
-                        list(plot + scale_x_discrete(labels = ~str_replace(., '-', '\n'))),
-                        list(plot))) %>%
+                        list(plot + scale_x_discrete(labels = ~str_replace(., '-', '-\n'))),
+                        list(plot + scale_x_discrete(labels = ~str_replace(., '-', '-\n'))))) %>%
   mutate(plot = list(plot + 
                        geom_vline(xintercept = 1.5, linewidth = 0.5) +
                        scale_y_continuous(limits = c(4.75, 17.5),
