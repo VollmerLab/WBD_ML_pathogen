@@ -11,3 +11,5 @@ old/*
 Code/utils/.Rhistory
 Code/utils/.Rhistory
 *.bak
+/Code/utils
+/Code/utils_tmp
