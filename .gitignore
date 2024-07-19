@@ -13,3 +13,6 @@ Code/utils/.Rhistory
 *.bak
 /Code/utils
 /Code/utils_tmp
+/Code/prepublish
+Data/bocas_shape.zip
+/prepublish
