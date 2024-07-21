@@ -13,3 +13,5 @@ Code/utils/.Rhistory
 Data/bocas_shape.zip
 /prepublish
 /Data/bocas_temp
+intermediate_files/field_asv_models.rds.gz
+intermediate_files/tank_asv_models.rds.gz

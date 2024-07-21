@@ -333,12 +333,9 @@ if(file.exists('../intermediate_files/field_asv_models.rds.gz') & !rerun_models)
 }
 
 field_asv_models %>%
-  # filter(asv_id == 'ASV25') %>%
   filter(asv_id %in% shap_importance$asv_id) %>%
   mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
   arrange(asv_id) %>%
-  # mutate(across(starts_with('p.'), ~p.adjust(., 'fdr'))) %>%
-  # filter(if_any(c(starts_with('p.'), contains('health')), ~. < alpha)) %>%
   
   left_join(taxonomy, by = 'asv_id') %>%
   rowwise %>%
@@ -348,7 +345,6 @@ field_asv_models %>%
   ungroup %>%
   pull(plot) %>%
   wrap_plots(byrow = TRUE)
-# ggsave('../Results/important_asvs_field.png', height = 15, width = 15)
 
 field_asv_models %>%
   filter(asv_id %in% shap_importance$asv_id) %>%
@@ -476,7 +472,6 @@ if(file.exists('../intermediate_files/tank_asv_models.rds.gz') & !rerun_models){
     nest_by(asv_id) %>%
     left_join(select(field_asv_models, asv_id, all_health_fit, starts_with('p.withinYear')),
               by = 'asv_id') %>%
-    # filter(asv_id == 'ASV25') %>%
     arrange(asv_id) %>%
     rowwise %>%
     
@@ -495,32 +490,6 @@ if(file.exists('../intermediate_files/tank_asv_models.rds.gz') & !rerun_models){
   
   write_rds(tank_asv_models, '../intermediate_files/tank_asv_models.rds.gz')
 }
-
-tank_asv_models$plot[[1]]
-tank_asv_models %>%
-  
-  filter(asv_id %in% shap_importance$asv_id) %>%
-  mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  arrange(asv_id) %>%
-  
-  # inner_join(filter(field_asv_models,
-  #                   if_all(starts_with('p.withinYear'), ~. < alpha),
-  #                   asv_id %in% shap_importance$asv_id) %>%
-  #              select(asv_id),
-  #            by = 'asv_id') %>%
-  
-  # select(-contains('Intercept')) %>%
-  # mutate(across(starts_with('p.'), ~p.adjust(., 'fdr'))) %>%
-  # filter(if_any(c(starts_with('p.') & contains('SX')), ~. < alpha)) %>%
-  # filter(if_any(c(starts_with('p.') & contains('SX')))) %>%
-  # filter(p.healthSXexpdis < alpha) %>%
-  left_join(taxonomy, by = 'asv_id') %>%
-  rowwise %>%
-  mutate(plot = list(plot + labs(title = str_c(order, family, genus, asv_id, sep = '\n'))+
-                       theme(plot.title = element_text(size = 10)))) %>%
-  ungroup %>%
-  pull(plot) %>%
-  wrap_plots()
 
 
 consistent_asvs <- tank_asv_models %>%
@@ -547,8 +516,6 @@ classified_asvs <- consistent_asvs %>%
 classified_plots <- classified_asvs %>%
   filter(likely_type %in% c('Pathogen', 'Opportunist') | asv_id == 'ASV40') %>%
   
-  # select(asv_id, starts_with('pvalue'), likely_type)
-  
   left_join(taxonomy, by = 'asv_id') %>%
   rowwise %>%
   mutate(plot = if_else(likely_type == 'Opportunist',
@@ -570,9 +537,6 @@ classified_plots <- classified_asvs %>%
                              axis.title.y = element_markdown(colour = 'black', size = 18),
                              legend.title = element_text(colour = 'black', size = 14),
                              axis.text.x = element_text(colour = 'black', size = 10)))) %>%
-  
-  # mutate(plot = list(plot + labs(title = str_c(order, family, genus, species, asv_id, sep = '\n')) +
-  #                      theme(plot.title = element_text(size = 10)))) %>%
   
   mutate(name = case_when(asv_id == 'ASV25' ~ '<i>Cysteiniphilum litorale</i>',
                           asv_id == 'ASV8' ~ '<i>Vibrio sp.</i>',
@@ -604,142 +568,3 @@ classified_plots <- classified_asvs %>%
 classified_plots
 ggsave('../Results/Fig5_important_asvs.png', height = 12, width = 12)
 ggsave('../Results/Fig5.svg', height = 12, width = 12)
-
-
-tank_asv_models %>%
-  mutate(important_asv = asv_id %in% shap_importance$asv_id,
-         consistent_asv = asv_id %in% consistent_asvs$asv_id,
-         classified_asv = asv_id %in% filter(classified_asvs, likely_type %in% c('Pathogen', 'Opportunist'))$asv_id,
-         pathogen_asv = asv_id %in% filter(classified_asvs, likely_type %in% c('Pathogen'))$asv_id,
-         opportunist_asv = classified_asv & !pathogen_asv) %>%
-  select(asv_id, important_asv, consistent_asv, classified_asv, pathogen_asv, opportunist_asv) %>%
-  write_csv('../Results/ML_asv_groups.csv')
-
-#### P/A % plots ####
-raw_pa_data <- tank_asv_models %>%
-  filter(asv_id %in% shap_importance$asv_id) %>%
-  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
-  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
-  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
-  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
-  # filter_at(vars(contains('pvalue_')), any_vars(. < alpha)) %>%
-  
-  mutate(likely_type = case_when(pvalue_DDvDH < alpha & 
-                                   #pvalue_DDvNH < alpha & 
-                                   pvalue_DvH < alpha &
-                                   pvalue_PostvPreD < alpha ~ 'Pathogen',
-                                 
-                                 pvalue_DvN < alpha &
-                                   pvalue_PostvPreD < alpha ~ 'Opportunist',
-                                 
-                                 TRUE ~ 'Commensalist'),
-         likely_type = factor(likely_type, levels = c('Pathogen', 'Opportunist', 'Commensalist')),
-         asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  arrange(asv_id) %>%
-  
-  # select(asv_id, starts_with('pvalue'), likely_type)
-  
-  left_join(taxonomy, by = 'asv_id') %>%
-  select(asv_id, domain:species, likely_type, data) %>%
-  rename(tank_data = data) %>%
-  left_join(select(field_asv_models, asv_id, data) %>%
-              rename(field_data = data),
-            by = 'asv_id') %>%
-  rowwise(asv_id:likely_type) %>%
-  mutate(field_data = list(mutate(field_data, treatment = str_c(health, year, season, sep = '_')) %>%
-                             select(sample_id, n_reads, treatment)),
-         tank_data = list(select(tank_data, sample_id, n_reads, treatment))) %>%
-  
-  reframe(bind_rows(tank_data, field_data)) %>%
-  group_by(across(c(asv_id:likely_type, treatment))) %>%
-  summarise(n_present = sum(n_reads > 0),
-            n_missing = sum(n_reads == 0),
-            total = n(),
-            .groups = 'rowwise') %>% 
-  reframe(broom::tidy(binom.test(x = n_present, n = total))) %>%
-  mutate(health = case_when(str_detect(treatment, '201[67]') ~ str_extract(treatment, '[HD]'),
-                            treatment == 'D_D' ~ 'D',
-                            TRUE ~ 'H'),
-         x_val = case_when(str_detect(treatment, '201[67]') ~ 'Field',
-                           str_detect(treatment, '[Pp]re') ~ 'Pre',
-                           TRUE ~ 'Post'),
-         x_val = factor(x_val, levels = c('Field', 'Pre', 'Post')),
-         exposure = case_when(x_val %in% c('Field', 'Pre') ~ 'none',
-                              treatment == 'N_H' ~ 'H',
-                              TRUE ~ 'D'))
-
-raw_pa_data %>%
-  mutate(asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  ggplot(aes(x = x_val, y = estimate, ymin = conf.low, ymax = conf.high,
-             colour = health, group = treatment, shape = exposure)) +
-  geom_pointrange(position = position_dodge(0.5)) +
-  facet_wrap(likely_type~asv_id)
-ggsave('../Results/percent_presence_important_asvs.png', height = 15, width = 15)
-
-#### Potential pathogens which samples are missing them ####
-the_pathogens <- tank_asv_models %>%
-  filter(asv_id %in% shap_importance$asv_id) %>%
-  mutate(across(contains('p.within'), ~p.adjust(., method = 'fdr'))) %>%
-  filter_at(vars(contains('p.within')), all_vars(. < alpha)) %>%
-  # filter(p.adjust(p.timetreat, method = 'fdr') < alpha) %>%
-  mutate(across(contains('pvalue_'), ~p.adjust(., method = 'fdr'))) %>%
-  # filter_at(vars(contains('pvalue_')), any_vars(. < alpha)) %>%
-  
-  mutate(likely_type = case_when(pvalue_DDvDH < alpha & 
-                                   #pvalue_DDvNH < alpha & 
-                                   pvalue_DvH < alpha &
-                                   pvalue_PostvPreD < alpha ~ 'Pathogen',
-                                 
-                                 pvalue_DvN < alpha &
-                                   pvalue_PostvPreD < alpha ~ 'Opportunist',
-                                 
-                                 TRUE ~ 'Commensalist'),
-         likely_type = factor(likely_type, levels = c('Pathogen', 'Opportunist', 'Commensalist')),
-         asv_id = factor(asv_id, levels = levels(shap_importance$asv_id))) %>%
-  arrange(asv_id) %>%
-  
-  # select(asv_id, starts_with('pvalue'), likely_type)
-  
-  left_join(taxonomy, by = 'asv_id') %>%
-  select(asv_id, domain:species, likely_type, data) %>%
-  rename(tank_data = data) %>%
-  left_join(select(field_asv_models, asv_id, data) %>%
-              rename(field_data = data),
-            by = 'asv_id') %>%
-  rowwise(asv_id:likely_type) %>%
-  mutate(field_data = list(mutate(field_data, treatment = str_c(health, year, season, sep = '_')) %>%
-                             select(sample_id, n_reads, lib.size, treatment)),
-         tank_data = list(select(tank_data, sample_id, n_reads, lib.size, treatment))) %>%
-  
-  reframe(bind_rows(tank_data, field_data)) %>% #lib.size
-  mutate(health = case_when(str_detect(treatment, '201[67]') ~ str_extract(treatment, '[HD]'),
-                            treatment == 'D_D' ~ 'D',
-                            TRUE ~ 'H')) %>%
-  filter(health == 'D',
-         likely_type == 'Pathogen')
-
-the_pathogens %>%
-  filter(asv_id == 'ASV25') %>%
-  glmer(as.integer(n_reads > 0) ~ scale(lib.size) + (1 | treatment), data = .,
-      family = binomial(link = 'logit')) %>%
-  emmeans(~lib.size, at = list(lib.size = seq(0, 3000, length.out = 1000)),
-          type = 'response') %>%
-  as_tibble() %>%
-  ggplot(aes(x = lib.size, y = response)) +
-  geom_line()
-  
-  
-  car::Anova()
-  ggplot(aes(x = lib.size, y = as.integer(n_reads > 0), colour = treatment)) +
-  # stat_summary_bin(bins = 100)
-  geom_point()
-
-#### Output asv coefficients ####
-asv_coef <- full_join(select(field_asv_models, asv_id, starts_with('mu'), starts_with('fcDH')),
-                      select(tank_asv_models, asv_id, starts_with('mu'), starts_with('fc')),
-                      by = 'asv_id') %>%
-  select(asv_id, starts_with('fcDH'), starts_with('mu_'))
-
-write_csv(asv_coef, '../Results/asv_coefficients.csv.gz') 
-
-the_taxa_complete
