@@ -1,8 +1,5 @@
-
 Code/.Rhistory
 Code/old/*
-intermediate_files/*
-Manuscript/~$lwyn_etal_PanamaField.docx
 Data/rosales
 Data/bocas_shape
 ncbi_upload/*
@@ -13,6 +10,6 @@ Code/utils/.Rhistory
 *.bak
 /Code/utils
 /Code/utils_tmp
-/Code/prepublish
 Data/bocas_shape.zip
 /prepublish
+/Data/bocas_temp

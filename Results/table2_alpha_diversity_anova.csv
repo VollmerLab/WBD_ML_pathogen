@@ -1,0 +1,10 @@
+metric,term,Chisq,Df,p-value
+richness,health,6.150,1,0.013
+richness,timepoint,113.909,3,<0.001
+richness,health:timepoint,3.750,3,0.290
+shannon,health,0.749,1,0.387
+shannon,timepoint,51.690,3,<0.001
+shannon,health:timepoint,2.638,3,0.451
+simpson,health,0.615,1,0.433
+simpson,timepoint,30.690,3,<0.001
+simpson,health:timepoint,1.348,3,0.718
