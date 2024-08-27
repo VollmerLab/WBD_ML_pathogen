@@ -566,5 +566,6 @@ classified_plots <- classified_asvs %>%
   theme(plot.tag = element_text(face = 'bold', size = 22)) 
   
 classified_plots
-ggsave('../Results/Fig5_important_asvs.png', height = 12, width = 12)
-ggsave('../Results/Fig5.svg', height = 12, width = 12)
+ggsave('../Results/Fig6_important_asvs.png', height = 12, width = 12)
+ggsave('../Results/Fig6.svg', height = 12, width = 12)
+ggsave('../Results/Fig6.pdf', height = 12, width = 12)

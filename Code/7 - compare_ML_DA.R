@@ -600,3 +600,5 @@ ggsave('../Results/Fig5_DAvML.png',
        height = 12, width = 10, bg = 'white')
 ggsave('../Results/Fig5.svg',
        height = 12, width = 10, bg = 'white')
+ggsave('../Results/Fig5.pdf',
+       height = 12, width = 10, bg = 'white')

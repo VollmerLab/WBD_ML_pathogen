@@ -439,6 +439,7 @@ plot_grid(microbial_diversity$plot,
           rel_widths = c(1, .25))
 ggsave('../Results/Fig2_microbial_diversity.png', height = 10, width = 10, bg = 'white')
 ggsave('../Results/Fig2.svg', height = 10, width = 10, bg = 'white')
+ggsave('../Results/Fig2.pdf', height = 10, width = 10, bg = 'white')
 #Have to add A/B/C above plot in inkscape
 
 write_rds(microbial_diversity[-1], '../intermediate_files/asv_colors.rds')

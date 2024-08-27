@@ -323,6 +323,8 @@ ggsave('../Results/Fig3_traditional_complexUpset.png',
        height = 12, width = 10, bg = 'white')
 ggsave('../Results/Fig3.svg', 
        height = 12, width = 10, bg = 'white')
+ggsave('../Results/Fig3.pdf', 
+       height = 12, width = 10, bg = 'white')
 
 #### Composition Analysis ####
 genus_associations <- base_plot_data %>%

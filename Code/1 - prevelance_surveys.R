@@ -479,3 +479,4 @@ temp_association_coral <- emmeans(acerv_model_random, ~timepoint,
         axis.text.y = element_text(size = 10, colour = 'black')) 
 ggsave('../Results/Fig1_temp_acer_wbd.png', height = 10, width = 7)
 ggsave('../Results/Fig1.svg', height = 10, width = 7)
+ggsave('../Results/Fig1.pdf', height = 10, width = 7)
